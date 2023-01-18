@@ -15,21 +15,25 @@ def initialize_normalizer():
     return apply_te
 
 
-def normalize_text(s: str, normalizer, lang: str = 'ru') -> str:
+def check_language(lang: str) -> str:
     lang_ = 'ru'
     if lang.lower().strip() in {'en', 'eng', 'english'}:
         lang_ = 'en'
     elif lang.lower().strip() not in {'ru', 'rus', 'russian'}:
         err_msg = f'The language "{lang}" is not supported!'
         raise ValueError(err_msg)
-    return normalizer(s, lan=lang_)
+    return lang_
+
+
+def normalize_text(s: str, normalizer, lang: str = 'ru') -> str:
+    return normalizer(s, lan=check_language(lang))
 
 
 def tokenize_text(s: str, lang: str = 'ru') -> List[str]:
-    if lang.lower().strip() in {'ru', 'rus', 'russian'}:
+    if check_language(lang) == 'ru':
         res = ru_sent_tokenize(s)
     else:
-        res = sent_tokenize(s, language=lang)
+        res = sent_tokenize(s)
     return res
 
 
