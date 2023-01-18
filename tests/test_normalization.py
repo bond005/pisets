@@ -12,7 +12,8 @@ except:
 
 
 class TestNormalization(unittest.TestCase):
-    def setUp(self) -> None:
+    @classmethod
+    def setUpClass(cls) -> None:
         nltk.download('punkt')
 
     def test_normalization(self):
