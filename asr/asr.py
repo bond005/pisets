@@ -34,6 +34,8 @@ def initialize_model() -> Tuple[Wav2Vec2ProcessorWithLM, Wav2Vec2ForCTC]:
     model_name = 'bond005/wav2vec2-large-ru-golos-with-lm'
     processor = Wav2Vec2ProcessorWithLM.from_pretrained(model_name)
     model = Wav2Vec2ForCTC.from_pretrained(model_name)
+    if torch.cuda.is_available():
+        model = model.to('cuda')
     return processor, model
 
 
@@ -67,10 +69,16 @@ def recognize(mono_sound: np.ndarray, processor: Wav2Vec2ProcessorWithLM,
             err_msg = 'The alpha is specified, but the beta is not specified!'
             raise ValueError(err_msg)
 
+    cuda_is_used = torch.cuda.is_available()
     inputs = processor(mono_sound, sampling_rate=16_000, return_tensors="pt", padding=True)
+    if cuda_is_used:
+        inputs = inputs.to('cuda')
     with torch.no_grad():
         logits_ = model(inputs.input_values, attention_mask=inputs.attention_mask).logits
-    logits = logits_.numpy()
+    if cuda_is_used:
+        logits = logits_.to('cpu').numpy()
+    else:
+        logits = logits_.numpy()
     del logits_, inputs
     if len(logits.shape) not in {2, 3}:
         err_msg = f'Logits matrix has incorrect shape! ' \
