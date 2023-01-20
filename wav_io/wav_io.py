@@ -11,17 +11,17 @@ def load_sound(fname: str) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray], N
     with wave.open(fname, 'rb') as fp:
         n_channels = fp.getnchannels()
         if n_channels not in {1, 2}:
-            err_msg = f'The channels number of the WAV sound is wrong! ' \
+            err_msg = f'"{fname}": the channels number of the WAV sound is wrong! ' \
                       f'Expected 1 or 2, got {n_channels}.'
             raise ValueError(err_msg)
         fs = fp.getframerate()
         if fs != 16_000:
-            err_msg = f'The sampling frequency the WAV sound is wrong! ' \
+            err_msg = f'"{fname}": the sampling frequency the WAV sound is wrong! ' \
                       f'Expected 16000 Hz, got {fs} Hz.'
             raise ValueError(err_msg)
         bytes_per_sample = fp.getsampwidth()
         if bytes_per_sample not in {1, 2}:
-            err_msg = f'The sample width of the WAV sound is wrong! ' \
+            err_msg = f'"{fname}": the sample width of the WAV sound is wrong! ' \
                       f'Expected 1 or 2, got {bytes_per_sample}.'
             raise ValueError(err_msg)
         sound_length = fp.getnframes()
@@ -33,7 +33,7 @@ def load_sound(fname: str) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray], N
     else:
         data = np.frombuffer(sound_bytes, dtype=np.int16)
     if len(data.shape) != 1:
-        err_msg = f'The loaded data is wrong! Expected 1-d array, got {len(data.shape)}-d one.'
+        err_msg = f'"{fname}": the loaded data is wrong! Expected 1-d array, got {len(data.shape)}-d one.'
         raise ValueError(err_msg)
     if n_channels == 1:
         if bytes_per_sample == 1:
@@ -81,10 +81,4 @@ def transform_to_wavpcm(src_fname: str, dst_fname: str) -> None:
         if additional_err_msg != '':
             err_msg += f' {additional_err_msg}'
         raise IOError(err_msg)
-    if audio.channels != 1:
-        audio.set_channels(1)
-    if audio.frame_rate != 16_000:
-        audio.set_frame_rate(16_000)
-    if audio.frame_width != 2:
-        audio.set_sample_width(2)
-    audio.export(dst_fname, format='wav')
+    audio.export(dst_fname, format='wav', parameters=['-ac', '1', '-acodec', 'pcm_s16le', '-ar', '16000'])
