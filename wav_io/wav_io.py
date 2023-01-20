@@ -1,7 +1,10 @@
+import os.path
 from typing import Tuple, Union
 import wave
 
 import numpy as np
+from pydub import AudioSegment
+from pydub.exceptions import CouldntDecodeError
 
 
 def load_sound(fname: str) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray], None]:
@@ -51,3 +54,37 @@ def load_sound(fname: str) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray], N
                 channel2.astype(np.float32) / 32768.0
             )
     return sound
+
+
+def transform_to_wavpcm(src_fname: str, dst_fname: str) -> None:
+    found_idx = src_fname.rfind('.')
+    if found_idx < 0:
+        err_msg = f'The extension of the file "{src_fname}" is unknown. ' \
+                  f'So, I cannot determine a format of this sound file.'
+        raise ValueError(err_msg)
+    if not os.path.isfile(src_fname):
+        err_msg = f'The file "{src_fname}" does not exist!'
+        raise IOError(err_msg)
+    source_audio_extension = dst_fname[(found_idx + 1):]
+    try:
+        audio = AudioSegment.from_file(src_fname, format=source_audio_extension)
+    except CouldntDecodeError as e1:
+        audio = None
+        additional_err_msg = str(e1)
+    except BaseException as e2:
+        audio = None
+        additional_err_msg = str(e2)
+    else:
+        additional_err_msg = ''
+    if audio is None:
+        err_msg = f'The file "{src_fname}" cannot be opened.'
+        if additional_err_msg != '':
+            err_msg += f' {additional_err_msg}'
+        raise IOError(err_msg)
+    if audio.channels != 1:
+        audio.set_channels(1)
+    if audio.frame_rate != 16_000:
+        audio.set_frame_rate(16_000)
+    if audio.frame_width != 2:
+        audio.set_sample_width(2)
+    audio.export(dst_fname, format='wav')

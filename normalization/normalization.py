@@ -1,12 +1,12 @@
 import os
-from typing import List, Tuple
+from typing import Any, List, Tuple
 
 from nltk import wordpunct_tokenize, sent_tokenize
 from rusenttokenize import ru_sent_tokenize
 import torch
 
 
-def initialize_normalizer():
+def initialize_normalizer() -> Any:
     model_path = os.path.join(os.path.dirname(__file__), '..', 'models', 'normalization',
                               'snakers4_silero-models')
     if not os.path.isdir(model_path):
@@ -25,7 +25,7 @@ def check_language(lang: str) -> str:
     return lang_
 
 
-def normalize_text(s: str, normalizer, lang: str = 'ru') -> str:
+def normalize_text(s: str, normalizer: Any, lang: str = 'ru') -> str:
     return normalizer(s, lan=check_language(lang))
 
 
