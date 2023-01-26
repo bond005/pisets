@@ -39,11 +39,17 @@ def tokenize_text(s: str, lang: str = 'ru') -> List[str]:
 
 def calculate_sentence_bounds(asr_result: List[Tuple[str, float, float]],
                               sentences: List[str]) -> List[Tuple[str, float, float]]:
-    source_text = ''
-    source_indices = []
-    for idx, cur in enumerate(asr_result):
-        source_text += (' ' + cur[0].replace('ё', 'е'))
-        source_indices += [idx for _ in range(len(cur[0]) + 1)]
+    if len(asr_result) == 0:
+        return []
+    if len(' '.join([cur[0] for cur in asr_result]).strip()) == 0:
+        return []
+    cur_word = asr_result[0][0].replace('ё', 'е')
+    source_text = cur_word
+    source_indices = [0 for _ in range(len(cur_word))]
+    for idx, cur in enumerate(asr_result[1:]):
+        cur_word = ' ' + cur[0].replace('ё', 'е')
+        source_text += cur_word
+        source_indices += [idx + 1 for _ in range(len(cur_word))]
     start_pos = 0
     sentences_with_bounds = []
     for cur_sent in sentences:
@@ -52,7 +58,7 @@ def calculate_sentence_bounds(asr_result: List[Tuple[str, float, float]],
         ).lower().replace('ё', 'е')
         found_idx = source_text[start_pos:].find(simplified_sent)
         if found_idx < 0:
-            err_msg = ''
+            err_msg = f'The sentence "{simplified_sent}" cannot be found in the source text "{source_text}".'
             raise ValueError(err_msg)
         found_idx += start_pos
         word_indices = set()

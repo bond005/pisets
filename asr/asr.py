@@ -1,7 +1,7 @@
 import os
 import re
 import sys
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Union
 
 import jiwer
 import jiwer.transforms as tr
@@ -10,7 +10,7 @@ from skopt import gp_minimize
 from skopt.space import Real
 from skopt.utils import use_named_args
 import torch
-from transformers import Wav2Vec2ForCTC, Wav2Vec2ProcessorWithLM
+from transformers import Wav2Vec2ForCTC, Wav2Vec2ConformerForCTC, Wav2Vec2ProcessorWithLM
 
 try:
     from vad.vad import MIN_SOUND_LENGTH
@@ -30,17 +30,24 @@ class ReplaceYo(tr.AbstractTransform):
         return outp
 
 
-def initialize_model() -> Tuple[Wav2Vec2ProcessorWithLM, Wav2Vec2ForCTC]:
-    model_name = 'bond005/wav2vec2-large-ru-golos-with-lm'
+def initialize_model(language: str = 'ru') -> Tuple[Wav2Vec2ProcessorWithLM, \
+        Union[Wav2Vec2ConformerForCTC, Wav2Vec2ForCTC]]:
+    if language == 'ru':
+        model_name = 'bond005/wav2vec2-large-ru-golos-with-lm'
+    else:
+        model_name = 'bond005/wav2vec2-large-ru-golos-with-lm'
     processor = Wav2Vec2ProcessorWithLM.from_pretrained(model_name)
-    model = Wav2Vec2ForCTC.from_pretrained(model_name)
+    if language == 'ru':
+        model = Wav2Vec2ForCTC.from_pretrained(model_name)
+    else:
+        model = Wav2Vec2ConformerForCTC.from_pretrained(model_name)
     if torch.cuda.is_available():
         model = model.to('cuda')
     return processor, model
 
 
 def recognize(mono_sound: np.ndarray, processor: Wav2Vec2ProcessorWithLM,
-              model: Wav2Vec2ForCTC, alpha: float=None, beta: float=None,
+              model: Union[Wav2Vec2ForCTC, Wav2Vec2ConformerForCTC], alpha: float=None, beta: float=None,
               hotword_weight: float=None, hotwords: List[str]=None) -> List[Tuple[str, float, float]]:
     if not isinstance(mono_sound, np.ndarray):
         err_msg = f'The sound is wrong! Expected {type(np.array([1, 2]))}, got {type(mono_sound)}.'
@@ -72,9 +79,9 @@ def recognize(mono_sound: np.ndarray, processor: Wav2Vec2ProcessorWithLM,
     cuda_is_used = torch.cuda.is_available()
     inputs = processor(mono_sound, sampling_rate=16_000, return_tensors="pt", padding=True)
     if cuda_is_used:
-        inputs = inputs.to('cuda')
+        inputs = {k: v.to("cuda") for k, v in inputs.items()}
     with torch.no_grad():
-        logits_ = model(inputs.input_values, attention_mask=inputs.attention_mask).logits
+        logits_ = model(**inputs).logits
     if cuda_is_used:
         logits = logits_.to('cpu').numpy()
     else:
@@ -91,15 +98,15 @@ def recognize(mono_sound: np.ndarray, processor: Wav2Vec2ProcessorWithLM,
             raise ValueError(err_msg)
         logits = logits[0]
     if (alpha is None) and (hotword_weight is None):
-        res = processor.decode(logits=logits, lm_score_boundary=False, output_word_offsets=True)
+        res = processor.decode(logits=logits, lm_score_boundary=True, output_word_offsets=True)
     elif (alpha is None) and (hotword_weight is not None):
-        res = processor.decode(logits=logits, lm_score_boundary=False, output_word_offsets=True,
+        res = processor.decode(logits=logits, lm_score_boundary=True, output_word_offsets=True,
                                hotwords=hotwords, hotword_weight=hotword_weight)
     elif (alpha is not None) and (hotword_weight is None):
-        res = processor.decode(logits=logits, lm_score_boundary=False, output_word_offsets=True,
+        res = processor.decode(logits=logits, lm_score_boundary=True, output_word_offsets=True,
                                alpha=alpha, beta=beta)
     else:
-        res = processor.decode(logits=logits, lm_score_boundary=False, output_word_offsets=True,
+        res = processor.decode(logits=logits, lm_score_boundary=True, output_word_offsets=True,
                                alpha=alpha, beta=beta, hotwords=hotwords, hotword_weight=hotword_weight)
     time_offset = model.config.inputs_to_logits_ratio / processor.current_processor.sampling_rate
     word_offsets = [
@@ -163,7 +170,7 @@ def decode_for_evaluation(processor: Wav2Vec2ProcessorWithLM, evaluation_logits:
     if hotword_weight is None:
         for cur in evaluation_logits:
             predicted = processor.decode(
-                logits=cur, lm_score_boundary=False, output_word_offsets=False,
+                logits=cur, lm_score_boundary=True, output_word_offsets=False,
                 alpha=alpha, beta=beta
             ).text
             if isinstance(predicted, list):
@@ -173,7 +180,7 @@ def decode_for_evaluation(processor: Wav2Vec2ProcessorWithLM, evaluation_logits:
     else:
         for cur in evaluation_logits:
             predicted = processor.decode(
-                logits=cur, lm_score_boundary=False, output_word_offsets=False,
+                logits=cur, lm_score_boundary=True, output_word_offsets=False,
                 alpha=alpha, beta=beta, hotwords=hotwords, hotword_weight=hotword_weight
             ).text
             if isinstance(predicted, list):

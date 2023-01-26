@@ -81,4 +81,10 @@ def transform_to_wavpcm(src_fname: str, dst_fname: str) -> None:
         if additional_err_msg != '':
             err_msg += f' {additional_err_msg}'
         raise IOError(err_msg)
-    audio.export(dst_fname, format='wav', parameters=['-ac', '1', '-acodec', 'pcm_s16le', '-ar', '16000'])
+    if audio.channels != 1:
+        audio.set_channels(1)
+    if audio.frame_rate != 16_000:
+        audio.set_frame_rate(16_000)
+    if audio.frame_width != 2:
+        audio.set_sample_width(2)
+    audio.export(dst_fname, format='wav', parameters=['-ac', '1', '-ar', '16000', '-acodec', 'pcm_s16le'])

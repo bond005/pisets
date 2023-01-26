@@ -7,6 +7,10 @@ from webrtcvad import Vad
 MIN_SOUND_LENGTH = 1600  # 100 milliseconds with sampling frequency = 16000 Hz
 
 
+def initialize_vad_ensemble() -> List[Vad]:
+    return [Vad(aggressiveness) for aggressiveness in range(4)]
+
+
 def sound_to_bytes(sound: np.ndarray) -> bytes:
     possible_lengths = {160, 320, 480}
     if len(sound.shape) != 1:
