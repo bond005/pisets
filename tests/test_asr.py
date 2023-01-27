@@ -50,6 +50,8 @@ class TestASR(unittest.TestCase):
             self.assertGreaterEqual(res[idx][1], prev_pos)
             self.assertLess(res[idx][1], res[idx][2])
             prev_pos = res[idx][2]
+        self.assertLessEqual(prev_pos, self.sound.shape[0] / 16000.0)
+        self.assertGreater(prev_pos, 0.5 * (self.sound.shape[0] / 16000.0))
 
     def test_recognize_pos02(self):
         res = recognize(
@@ -75,6 +77,8 @@ class TestASR(unittest.TestCase):
             self.assertGreaterEqual(res[idx][1], prev_pos)
             self.assertLess(res[idx][1], res[idx][2])
             prev_pos = res[idx][2]
+        self.assertLessEqual(prev_pos, self.sound.shape[0] / 16000.0)
+        self.assertGreater(prev_pos, 0.5 * (self.sound.shape[0] / 16000.0))
 
     def test_check_annotations_and_hotwords_pos01(self):
         annotations = [

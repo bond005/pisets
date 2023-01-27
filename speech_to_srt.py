@@ -159,7 +159,7 @@ def main():
                 raise
             speech_to_srt_logger.info(f'The sound frame {counter + 2} is recognized '
                                       f'(the frame duration is {cur_frame.shape[0] / 16000.0}).')
-            frame_start = frame_bounds[0]
+            frame_start = frame_bounds[0] / 16000.0
             words = []
             for word_text, word_start, word_end in words_:
                 words.append((
