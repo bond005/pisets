@@ -18,7 +18,7 @@ except:
     from wav_io.wav_io import load_sound
 
 
-class TestASR(unittest.TestCase):
+class TestRussianASR(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         if torch.cuda.is_available():
@@ -28,15 +28,15 @@ class TestASR(unittest.TestCase):
             cls.cuda_is_used = False
         cls.sound = load_sound(os.path.join(os.path.dirname(__file__), 'testdata', 'test_sound_ru.wav'))
         cls.yet_another_sound = load_sound(os.path.join(os.path.dirname(__file__), 'testdata', 'mono_sound.wav'))
-        cls.processor, cls.model = initialize_model()
+        cls.processor_ru, cls.model_ru = initialize_model('ru')
 
     def test_recognize_pos01(self):
         res = recognize(
             mono_sound=self.sound,
-            processor=self.processor,
-            model=self.model
+            processor=self.processor_ru,
+            model=self.model_ru
         )
-        true_words = ['нейронные', 'сети', 'это', 'хорошо']
+        true_words = ['неиронные', 'сети', 'это', 'хорошо']
         self.assertIsInstance(res, list)
         self.assertEqual(len(res), len(true_words))
         prev_pos = 0.0
@@ -56,14 +56,15 @@ class TestASR(unittest.TestCase):
     def test_recognize_pos02(self):
         res = recognize(
             mono_sound=self.sound,
-            processor=self.processor,
-            model=self.model,
+            processor=self.processor_ru,
+            model=self.model_ru,
             alpha=0.565,
             beta=0.148,
-            hotword_weight=2.0,
-            hotwords=['нейронные', 'сети']
+            hotword_weight=10.0,
+            hotwords=['нейронные', 'нейронные сети'],
+            verbose=True
         )
-        true_words = ['нейронные', 'сети', 'это', 'хорошо']
+        true_words = ['неиронные', 'сети', 'это', 'хорошо']
         self.assertIsInstance(res, list)
         self.assertEqual(len(res), len(true_words))
         prev_pos = 0.0
@@ -133,24 +134,24 @@ class TestASR(unittest.TestCase):
         re_for_digits = re.compile(r'\d+')
         re_for_russian_letters = re.compile(r'^[абвгдежзийклмнопрстуфхцчшщъыьэюя]+[ абвгдежзийклмнопрстуфхцчшщъыьэюя]*'
                                             r'[абвгдежзийклмнопрстуфхцчшщъыьэюя]+$')
-        inputs = self.processor(self.sound, sampling_rate=16_000,
-                                return_tensors="pt", padding=True)
+        inputs = self.processor_ru(self.sound, sampling_rate=16_000,
+                                   return_tensors="pt", padding=True)
         if self.cuda_is_used:
             inputs = inputs.to('cuda')
         with torch.no_grad():
-            predicted = self.model(inputs.input_values, attention_mask=inputs.attention_mask).logits
+            predicted = self.model_ru(inputs.input_values, attention_mask=inputs.attention_mask).logits
         del inputs
         if self.cuda_is_used:
             logits1 = predicted.to('cpu').numpy()[0]
         else:
             logits1 = predicted.numpy()[0]
         del predicted
-        inputs = self.processor(self.yet_another_sound, sampling_rate=16_000,
-                                return_tensors="pt", padding=True)
+        inputs = self.processor_ru(self.yet_another_sound, sampling_rate=16_000,
+                                   return_tensors="pt", padding=True)
         if self.cuda_is_used:
             inputs = inputs.to('cuda')
         with torch.no_grad():
-            predicted = self.model(inputs.input_values, attention_mask=inputs.attention_mask).logits
+            predicted = self.model_ru(inputs.input_values, attention_mask=inputs.attention_mask).logits
         del inputs
         if self.cuda_is_used:
             logits2 = predicted.to('cpu').numpy()[0]
@@ -159,7 +160,7 @@ class TestASR(unittest.TestCase):
         del predicted
         logits = [logits1, logits2]
         recognized_texts = decode_for_evaluation(
-            processor=self.processor,
+            processor=self.processor_ru,
             evaluation_logits=logits,
             alpha=0.565,
             beta=0.148,

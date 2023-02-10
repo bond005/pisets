@@ -19,6 +19,9 @@ except:
     from vad.vad import MIN_SOUND_LENGTH
 
 
+BEAM_WIDTH = 20
+
+
 class ReplaceYo(tr.AbstractTransform):
     def process_string(self, s: str):
         return s.replace('ё', 'е')
@@ -35,7 +38,7 @@ def initialize_model(language: str = 'ru') -> Tuple[Wav2Vec2ProcessorWithLM, \
     if language == 'ru':
         model_name = 'bond005/wav2vec2-large-ru-golos-with-lm'
     else:
-        model_name = 'bond005/wav2vec2-large-ru-golos-with-lm'
+        model_name = 'patrickvonplaten/wav2vec2-large-960h-lv60-self-4-gram'
     processor = Wav2Vec2ProcessorWithLM.from_pretrained(model_name)
     if language == 'ru':
         model = Wav2Vec2ForCTC.from_pretrained(model_name)
@@ -47,8 +50,9 @@ def initialize_model(language: str = 'ru') -> Tuple[Wav2Vec2ProcessorWithLM, \
 
 
 def recognize(mono_sound: np.ndarray, processor: Wav2Vec2ProcessorWithLM,
-              model: Union[Wav2Vec2ForCTC, Wav2Vec2ConformerForCTC], alpha: float=None, beta: float=None,
-              hotword_weight: float=None, hotwords: List[str]=None) -> List[Tuple[str, float, float]]:
+              model: Union[Wav2Vec2ForCTC, Wav2Vec2ConformerForCTC], alpha: float = None, beta: float = None,
+              hotword_weight: float = None, hotwords: List[str] = None,
+              verbose: bool=False) -> List[Tuple[str, float, float]]:
     if not isinstance(mono_sound, np.ndarray):
         err_msg = f'The sound is wrong! Expected {type(np.array([1, 2]))}, got {type(mono_sound)}.'
         raise ValueError(err_msg)
@@ -98,20 +102,28 @@ def recognize(mono_sound: np.ndarray, processor: Wav2Vec2ProcessorWithLM,
             raise ValueError(err_msg)
         logits = logits[0]
     if (alpha is None) and (hotword_weight is None):
-        res = processor.decode(logits=logits, lm_score_boundary=True, output_word_offsets=True)
+        res = processor.decode(logits=logits, lm_score_boundary=True, output_word_offsets=True, beam_width=BEAM_WIDTH)
+        if verbose:
+            print('Logits are decoded without any hotword.')
     elif (alpha is None) and (hotword_weight is not None):
-        res = processor.decode(logits=logits, lm_score_boundary=True, output_word_offsets=True,
+        res = processor.decode(logits=logits, lm_score_boundary=True, output_word_offsets=True, beam_width=BEAM_WIDTH,
                                hotwords=hotwords, hotword_weight=hotword_weight)
+        if verbose:
+            print(f'Logits are decoded with hotwords (the hotword weight is {hotword_weight}).')
     elif (alpha is not None) and (hotword_weight is None):
-        res = processor.decode(logits=logits, lm_score_boundary=True, output_word_offsets=True,
+        res = processor.decode(logits=logits, lm_score_boundary=True, output_word_offsets=True, beam_width=BEAM_WIDTH,
                                alpha=alpha, beta=beta)
+        if verbose:
+            print('Logits are decoded without any hotword.')
     else:
-        res = processor.decode(logits=logits, lm_score_boundary=True, output_word_offsets=True,
+        res = processor.decode(logits=logits, lm_score_boundary=True, output_word_offsets=True, beam_width=BEAM_WIDTH,
                                alpha=alpha, beta=beta, hotwords=hotwords, hotword_weight=hotword_weight)
+        if verbose:
+            print(f'Logits are decoded with hotwords (the hotword weight is {hotword_weight}).')
     time_offset = model.config.inputs_to_logits_ratio / processor.current_processor.sampling_rate
     word_offsets = [
         (
-            d["word"],
+            d["word"].lower(),
             round(d["start_offset"] * time_offset, 3),
             round(d["end_offset"] * time_offset, 3),
         )
@@ -170,23 +182,23 @@ def decode_for_evaluation(processor: Wav2Vec2ProcessorWithLM, evaluation_logits:
     if hotword_weight is None:
         for cur in evaluation_logits:
             predicted = processor.decode(
-                logits=cur, lm_score_boundary=True, output_word_offsets=False,
+                logits=cur, lm_score_boundary=True, output_word_offsets=False, beam_width=BEAM_WIDTH,
                 alpha=alpha, beta=beta
             ).text
             if isinstance(predicted, list):
-                res += predicted
+                res += [cur.lower() for cur in predicted]
             else:
-                res.append(predicted)
+                res.append(predicted.lower())
     else:
         for cur in evaluation_logits:
             predicted = processor.decode(
-                logits=cur, lm_score_boundary=True, output_word_offsets=False,
+                logits=cur, lm_score_boundary=True, output_word_offsets=False, beam_width=BEAM_WIDTH,
                 alpha=alpha, beta=beta, hotwords=hotwords, hotword_weight=hotword_weight
             ).text
             if isinstance(predicted, list):
-                res += predicted
+                res += [cur.lower() for cur in predicted]
             else:
-                res.append(predicted)
+                res.append(predicted.lower())
     return res
 
 
