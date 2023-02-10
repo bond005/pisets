@@ -10,7 +10,7 @@ from skopt import gp_minimize
 from skopt.space import Real
 from skopt.utils import use_named_args
 import torch
-from transformers import Wav2Vec2ForCTC, Wav2Vec2ConformerForCTC, Wav2Vec2ProcessorWithLM
+from transformers import Wav2Vec2ForCTC, Wav2Vec2ProcessorWithLM
 
 try:
     from vad.vad import MIN_SOUND_LENGTH
@@ -33,24 +33,20 @@ class ReplaceYo(tr.AbstractTransform):
         return outp
 
 
-def initialize_model(language: str = 'ru') -> Tuple[Wav2Vec2ProcessorWithLM, \
-        Union[Wav2Vec2ConformerForCTC, Wav2Vec2ForCTC]]:
+def initialize_model(language: str = 'ru') -> Tuple[Wav2Vec2ProcessorWithLM, Wav2Vec2ForCTC]:
     if language == 'ru':
         model_name = 'bond005/wav2vec2-large-ru-golos-with-lm'
     else:
         model_name = 'patrickvonplaten/wav2vec2-large-960h-lv60-self-4-gram'
     processor = Wav2Vec2ProcessorWithLM.from_pretrained(model_name)
-    if language == 'ru':
-        model = Wav2Vec2ForCTC.from_pretrained(model_name)
-    else:
-        model = Wav2Vec2ConformerForCTC.from_pretrained(model_name)
+    model = Wav2Vec2ForCTC.from_pretrained(model_name)
     if torch.cuda.is_available():
         model = model.to('cuda')
     return processor, model
 
 
 def recognize(mono_sound: np.ndarray, processor: Wav2Vec2ProcessorWithLM,
-              model: Union[Wav2Vec2ForCTC, Wav2Vec2ConformerForCTC], alpha: float = None, beta: float = None,
+              model: Wav2Vec2ForCTC, alpha: float = None, beta: float = None,
               hotword_weight: float = None, hotwords: List[str] = None,
               verbose: bool=False) -> List[Tuple[str, float, float]]:
     if not isinstance(mono_sound, np.ndarray):
