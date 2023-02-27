@@ -36,7 +36,7 @@ class TestRussianASR(unittest.TestCase):
             processor=self.processor_ru,
             model=self.model_ru
         )
-        true_words = ['неиронные', 'сети', 'это', 'хорошо']
+        true_words = ['нейронные', 'сети', 'это', 'хорошо']
         self.assertIsInstance(res, list)
         self.assertEqual(len(res), len(true_words))
         prev_pos = 0.0
@@ -64,7 +64,7 @@ class TestRussianASR(unittest.TestCase):
             hotwords=['нейронные', 'нейронные сети'],
             verbose=True
         )
-        true_words = ['неиронные', 'сети', 'это', 'хорошо']
+        true_words = ['нейронные', 'сети', 'это', 'хорошо']
         self.assertIsInstance(res, list)
         self.assertEqual(len(res), len(true_words))
         prev_pos = 0.0
