@@ -1,7 +1,7 @@
 import os
 import re
 import sys
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Tuple
 
 import jiwer
 import jiwer.transforms as tr

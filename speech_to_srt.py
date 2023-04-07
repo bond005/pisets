@@ -6,10 +6,10 @@ import sys
 import tempfile
 
 import numpy as np
-
 from wav_io.wav_io import transform_to_wavpcm, load_sound
 from vad.vad import initialize_vad_ensemble, split_long_sound
 from asr.asr import recognize, initialize_model
+from rescoring.rescoring import initialize_rescorer, rescore
 from normalization.normalization import check_language, initialize_normalizer
 from normalization.normalization import tokenize_text, normalize_text, calculate_sentence_bounds
 from utils.utils import time_to_str
@@ -26,7 +26,12 @@ def main():
                         help='The input sound file name or YouTube URL.')
     parser.add_argument('-o', '--output', dest='output_name', type=str, required=True,
                         help='The output SubRip file name.')
+    parser.add_argument('-r', '--rescorer', dest='rescorer', action='store_true',
+                        help='The necessity to use the T5 transformer as a rescorer.')
     args = parser.parse_args()
+
+    tokenizer_for_rescorer = None
+    model_of_rescorer = None
 
     audio_fname = os.path.normpath(args.input_name)
     if not os.path.isfile(audio_fname):
@@ -94,6 +99,15 @@ def main():
             raise
         speech_to_srt_logger.info('The model and processor are loaded.')
 
+        if args.rescorer:
+            try:
+                tokenizer_for_rescorer, model_of_rescorer = initialize_rescorer(language_name)
+            except BaseException as ex:
+                err_msg = str(ex)
+                speech_to_srt_logger.error(err_msg)
+                raise
+            speech_to_srt_logger.info('The rescorer is loaded.')
+
         try:
             vad = initialize_vad_ensemble()
         except BaseException as ex:
@@ -111,7 +125,7 @@ def main():
         speech_to_srt_logger.info('The text normalizer is initialized.')
 
         try:
-            sound_frames, frame_bounds = split_long_sound(input_sound, vad, max_sound_len=60 * 16_000)
+            sound_frames, frame_bounds = split_long_sound(input_sound, vad, max_sound_len=30 * 16_000)
         except BaseException as ex:
             err_msg = str(ex)
             speech_to_srt_logger.error(err_msg)
@@ -125,6 +139,14 @@ def main():
             raise
         speech_to_srt_logger.info(f'The sound frame 1 is recognized '
                                   f'(the frame duration is {sound_frames[0].shape[0] / 16000.0}).')
+        if (tokenizer_for_rescorer is not None) and (model_of_rescorer is not None):
+            try:
+                words = rescore(words, tokenizer_for_rescorer, model_of_rescorer)
+            except BaseException as ex:
+                err_msg = str(ex)
+                speech_to_srt_logger.error(err_msg)
+                raise
+            speech_to_srt_logger.info('The sound frame 1 is rescored.')
         try:
             sentences = tokenize_text(
                 s=normalize_text(
@@ -159,6 +181,14 @@ def main():
                 raise
             speech_to_srt_logger.info(f'The sound frame {counter + 2} is recognized '
                                       f'(the frame duration is {cur_frame.shape[0] / 16000.0}).')
+            if (tokenizer_for_rescorer is not None) and (model_of_rescorer is not None):
+                try:
+                    words_ = rescore(words_, tokenizer_for_rescorer, model_of_rescorer)
+                except BaseException as ex:
+                    err_msg = str(ex)
+                    speech_to_srt_logger.error(err_msg)
+                    raise
+                speech_to_srt_logger.info(f'The sound frame {counter + 2} is rescored.')
             frame_start = frame_bounds[0] / 16000.0
             words = []
             for word_text, word_start, word_end in words_:

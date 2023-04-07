@@ -65,7 +65,7 @@ def transform_to_wavpcm(src_fname: str, dst_fname: str) -> None:
     if not os.path.isfile(src_fname):
         err_msg = f'The file "{src_fname}" does not exist!'
         raise IOError(err_msg)
-    source_audio_extension = dst_fname[(found_idx + 1):]
+    source_audio_extension = src_fname[(found_idx + 1):]
     try:
         audio = AudioSegment.from_file(src_fname, format=source_audio_extension)
     except CouldntDecodeError as e1:
