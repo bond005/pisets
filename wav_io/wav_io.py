@@ -7,6 +7,9 @@ from pydub import AudioSegment
 from pydub.exceptions import CouldntDecodeError
 
 
+TARGET_SAMPLING_FREQUENCY = 16_000
+
+
 def load_sound(fname: str) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray], None]:
     with wave.open(fname, 'rb') as fp:
         n_channels = fp.getnchannels()
@@ -15,9 +18,9 @@ def load_sound(fname: str) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray], N
                       f'Expected 1 or 2, got {n_channels}.'
             raise ValueError(err_msg)
         fs = fp.getframerate()
-        if fs != 16_000:
+        if fs != TARGET_SAMPLING_FREQUENCY:
             err_msg = f'"{fname}": the sampling frequency the WAV sound is wrong! ' \
-                      f'Expected 16000 Hz, got {fs} Hz.'
+                      f'Expected {TARGET_SAMPLING_FREQUENCY} Hz, got {fs} Hz.'
             raise ValueError(err_msg)
         bytes_per_sample = fp.getsampwidth()
         if bytes_per_sample not in {1, 2}:
@@ -83,8 +86,9 @@ def transform_to_wavpcm(src_fname: str, dst_fname: str) -> None:
         raise IOError(err_msg)
     if audio.channels != 1:
         audio.set_channels(1)
-    if audio.frame_rate != 16_000:
-        audio.set_frame_rate(16_000)
+    if audio.frame_rate != TARGET_SAMPLING_FREQUENCY:
+        audio.set_frame_rate(TARGET_SAMPLING_FREQUENCY)
     if audio.frame_width != 2:
         audio.set_sample_width(2)
-    audio.export(dst_fname, format='wav', parameters=['-ac', '1', '-ar', '16000', '-acodec', 'pcm_s16le'])
+    target_parameters = ['-ac', '1', '-ar', f'{TARGET_SAMPLING_FREQUENCY}', '-acodec', 'pcm_s16le']
+    audio.export(dst_fname, format='wav', parameters=target_parameters)

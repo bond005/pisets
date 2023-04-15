@@ -7,6 +7,7 @@ import tempfile
 
 import numpy as np
 from wav_io.wav_io import transform_to_wavpcm, load_sound
+from wav_io.wav_io import TARGET_SAMPLING_FREQUENCY
 from vad.vad import initialize_vad_ensemble, split_long_sound
 from asr.asr import recognize, initialize_model
 from rescoring.rescoring import initialize_rescorer, rescore
@@ -28,10 +29,19 @@ def main():
                         help='The output SubRip file name.')
     parser.add_argument('-r', '--rescorer', dest='rescorer', action='store_true',
                         help='The necessity to use the T5 transformer as a rescorer.')
+    parser.add_argument('-f', '--frame', dest='sound_frame', type=int, default=50, required=False,
+                        help='The maximum size of the sound frame (in seconds).')
     args = parser.parse_args()
 
     tokenizer_for_rescorer = None
     model_of_rescorer = None
+
+    frame_size = args.sound_frame
+    if (frame_size <= 10) or (frame_size >= 70):
+        err_msg = f'The maximum size of the sound frame has a wrong value! ' \
+                  f'Expected an integer greater than 10 and less than 70, got {frame_size}.'
+        speech_to_srt_logger.error(err_msg)
+        raise IOError(err_msg)
 
     audio_fname = os.path.normpath(args.input_name)
     if not os.path.isfile(audio_fname):
@@ -89,7 +99,7 @@ def main():
             speech_to_srt_logger.info(f'The sound "{audio_fname}" is stereo.')
             input_sound = (input_sound[0] + input_sound[1]) / 2.0
         speech_to_srt_logger.info(f'The total duration of the sound "{audio_fname}" is '
-                                  f'{time_to_str(input_sound.shape[0] / 16000.0)}.')
+                                  f'{time_to_str(input_sound.shape[0] / TARGET_SAMPLING_FREQUENCY)}.')
 
         try:
             processor, model = initialize_model(language_name)
@@ -125,7 +135,7 @@ def main():
         speech_to_srt_logger.info('The text normalizer is initialized.')
 
         try:
-            sound_frames, frame_bounds = split_long_sound(input_sound, vad, max_sound_len=30 * 16_000)
+            sound_frames, frame_bounds = split_long_sound(input_sound, vad, max_sound_len=frame_size * 16_000)
         except BaseException as ex:
             err_msg = str(ex)
             speech_to_srt_logger.error(err_msg)
@@ -138,7 +148,7 @@ def main():
             speech_to_srt_logger.error(err_msg)
             raise
         speech_to_srt_logger.info(f'The sound frame 1 is recognized '
-                                  f'(the frame duration is {sound_frames[0].shape[0] / 16000.0}).')
+                                  f'(the frame duration is {sound_frames[0].shape[0] / TARGET_SAMPLING_FREQUENCY}).')
         if (tokenizer_for_rescorer is not None) and (model_of_rescorer is not None):
             try:
                 words = rescore(words, tokenizer_for_rescorer, model_of_rescorer)
@@ -180,7 +190,7 @@ def main():
                 speech_to_srt_logger.error(err_msg)
                 raise
             speech_to_srt_logger.info(f'The sound frame {counter + 2} is recognized '
-                                      f'(the frame duration is {cur_frame.shape[0] / 16000.0}).')
+                                      f'(the frame duration is {cur_frame.shape[0] / TARGET_SAMPLING_FREQUENCY}).')
             if (tokenizer_for_rescorer is not None) and (model_of_rescorer is not None):
                 try:
                     words_ = rescore(words_, tokenizer_for_rescorer, model_of_rescorer)
@@ -189,7 +199,7 @@ def main():
                     speech_to_srt_logger.error(err_msg)
                     raise
                 speech_to_srt_logger.info(f'The sound frame {counter + 2} is rescored.')
-            frame_start = frame_bounds[0] / 16000.0
+            frame_start = frame_bounds[0] / TARGET_SAMPLING_FREQUENCY
             words = []
             for word_text, word_start, word_end in words_:
                 words.append((
