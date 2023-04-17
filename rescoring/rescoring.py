@@ -6,6 +6,9 @@ from transformers import T5ForConditionalGeneration
 from transformers import T5Tokenizer
 
 
+MAX_DURATION_FOR_RESCORER = 12.0
+
+
 def initialize_rescorer(language: str = 'ru') -> Tuple[T5Tokenizer, T5ForConditionalGeneration]:
     if language != 'ru':
         raise ValueError(f'The language "{language}" is not supported!')
@@ -122,25 +125,38 @@ def rescore(words: List[Tuple[str, float, float]], tokenizer: T5Tokenizer,
         return []
     if len(words) < 3:
         return words
-    text = ' '.join([cur[0] for cur in words])
-    ru_letters = set('аоуыэяеёюибвгдйжзклмнпрстфхцчшщьъ')
-    punct = set('.,:/\\?!()[]{};"\'-')
-    x = tokenizer(text, return_tensors='pt', padding=True).to(model.device)
-    max_size = int(x.input_ids.shape[1] * 1.5 + 10)
-    min_size = 3
-    if x.input_ids.shape[1] <= min_size:
-        return words
-    out = model.generate(**x, do_sample=False, num_beams=7,
-                         max_length=max_size, min_length=min_size)
-    res = tokenizer.decode(out[0], skip_special_tokens=True).lower().strip()
-    res = ' '.join(res.split())
-    postprocessed = ''
-    for cur in res:
-        if cur.isspace() or (cur in punct):
-            postprocessed += ' '
-        elif cur in ru_letters:
-            postprocessed += cur
-    postprocessed = (' '.join(postprocessed.strip().split())).replace('ё', 'е').strip()
-    if len(postprocessed) == 0:
-        return words
-    return align(words, postprocessed.split())
+    if (words[-1][2] - words[0][1]) > MAX_DURATION_FOR_RESCORER:
+        start_idx = 0
+        end_idx = 1
+        rescored_words = []
+        while end_idx < len(words):
+            if (words[end_idx][2] - words[start_idx][1]) > MAX_DURATION_FOR_RESCORER:
+                rescored_words += rescore(words[start_idx:end_idx], tokenizer, model)
+                start_idx = end_idx
+            end_idx += 1
+        rescored_words += rescore(words[start_idx:end_idx], tokenizer, model)
+    else:
+        text = ' '.join([cur[0] for cur in words])
+        ru_letters = set('аоуыэяеёюибвгдйжзклмнпрстфхцчшщьъ')
+        punct = set('.,:/\\?!()[]{};"\'-')
+        x = tokenizer(text, return_tensors='pt', padding=True).to(model.device)
+        max_size = int(x.input_ids.shape[1] * 1.5 + 10)
+        min_size = 3
+        if x.input_ids.shape[1] <= min_size:
+            return words
+        out = model.generate(**x, do_sample=False, num_beams=7,
+                             max_length=max_size, min_length=min_size)
+        res = tokenizer.decode(out[0], skip_special_tokens=True).lower().strip()
+        res = ' '.join(res.split())
+        postprocessed = ''
+        for cur in res:
+            if cur.isspace() or (cur in punct):
+                postprocessed += ' '
+            elif cur in ru_letters:
+                postprocessed += cur
+        postprocessed = (' '.join(postprocessed.strip().split())).replace('ё', 'е').strip()
+        if len(postprocessed) == 0:
+            rescored_words = words
+        else:
+            rescored_words = align(words, postprocessed.split())
+    return rescored_words
