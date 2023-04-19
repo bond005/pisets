@@ -258,6 +258,7 @@ def transcribe():
         output_text += f'{sentence_text}\n\n'
     resp = jsonify(output_text)
     resp.status_code = 200
+    return resp
 
 
 if __name__ == '__main__':
