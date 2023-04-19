@@ -1,10 +1,12 @@
 datasets>=2.4.0
 ffmpeg-python==0.2.0
+flask>=2.2.2
 huggingface-hub>=0.9.1
 jiwer>=2.5.1
 nltk>=3.7
 numpy>=1.21.5
 pydub>=0.25.1
+requests>=2.28.1
 rusenttokenize>=0.0.5
 scikit-optimize>=0.9.0
 sentencepiece>=0.1.95
