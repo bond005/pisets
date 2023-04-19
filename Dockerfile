@@ -10,7 +10,7 @@ RUN apt-get install -y apt-utils && \
     apt-get install -y automake && \
     apt-get install -y apt-transport-https && \
     apt-get install -y build-essential && \
-    apt-get install -y git g++ autoconf-archive make libtool && \
+    apt-get install -y git g++ autoconf-archive libtool && \
     apt-get install -y python-setuptools python-dev && \
     apt-get install -y python3-setuptools python3-dev && \
     apt-get install -y cmake-data && \
