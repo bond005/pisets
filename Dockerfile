@@ -47,6 +47,7 @@ WORKDIR ..
 RUN mkdir /usr/src/pisets
 
 COPY ./server_ru.py /usr/src/pisets/server_ru.py
+COPY ./download_models.py /usr/src/pisets/download_models.py
 COPY ./requirements.txt /usr/src/pisets/requirements.txt
 COPY ./asr/ /usr/src/pisets/asr/
 COPY ./normalization/ /usr/src/pisets/normalization/
@@ -61,5 +62,7 @@ WORKDIR /usr/src/pisets
 RUN python3 -m pip install --upgrade pip
 RUN python3 -m pip install torch==2.0.0 torchvision==0.15.0 torchaudio==2.0.0 --index-url https://download.pytorch.org/whl/cpu
 RUN python3 -m pip install -r requirements.txt
+
+RUN python3 download_models.py ru
 
 ENTRYPOINT ["python3", "server_ru.py"]

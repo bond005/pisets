@@ -61,8 +61,8 @@ def ready():
     return 'OK'
 
 
-@app.route('/recognize', methods=['POST'])
-def recognize():
+@app.route('/transcribe', methods=['POST'])
+def transcribe():
     speech_to_srt_logger.info('~~~Recognition process started~~~')
     if 'audio' not in request.files:
         speech_to_srt_logger.error('400: No audiofile part in the request')

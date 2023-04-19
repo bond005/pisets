@@ -29,13 +29,19 @@ def main():
         err_msg = f'The file name "{output_srt_fname}" is incorrect!'
         raise IOError(err_msg)
 
+    resp = requests.get('http://localhost:8040/ready')
+    if resp.status_code != 200:
+        raise ValueError(f'The service is not available!')
+    
     with open(audio_fname, 'rb') as audio_fp:
         files = {'audio': (audio_fname, audio_fp, 'audio/wave')}
         if args.address.strip() != '':
-            resp = requests.post('http://' + args.address.strip() + ':8040/recognize', files=files)
+            resp = requests.post('http://' + args.address.strip() + ':8040/transcribe', files=files)
         else:
-            resp = requests.post('http://localhost:8040/recognize', files=files)
+            resp = requests.post('http://localhost:8040/transcribe', files=files)
 
+    if resp.status_code != 200:
+        raise ValueError(f'The file "{audio_fname}" is not transcribed! ' + str(resp))
     with codecs.open(output_srt_fname, mode='w', encoding='utf-8') as srt_fp:
         srt_fp.write(resp.json())
 
