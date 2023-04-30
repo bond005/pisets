@@ -68,6 +68,12 @@ def main():
         speech_to_srt_logger.error(err_msg)
         raise IOError(err_msg)
 
+    if os.path.basename(output_srt_fname) == os.path.basename(audio_fname):
+        err_msg = f'The input audio and the output SubRip file have a same names! ' \
+                  f'{os.path.basename(audio_fname)} = {os.path.basename(output_srt_fname)}'
+        speech_to_srt_logger.error(err_msg)
+        raise IOError(err_msg)
+
     tmp_wav_name = ''
     try:
         with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.wav') as fp:

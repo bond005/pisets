@@ -59,6 +59,8 @@ Other arguments are not required. If you do not specify them, then their default
 
 `-f` sets the maximum duration of the sound frame (in seconds). The fact is that the **Pisets** is designed so that a very long audio signal is divided into smaller sound frames, then these frames are recognized independently, and the recognition results are glued together into a single transcription. The need for such a procedure is due to the architecture of the acoustic neural network. And this argument determines the maximum duration of such frame, as defined above. The default value is 50 seconds, and I don't recommend changing it.
 
+If your computer has CUDA-compatible GPU, and your PyTorch has been correctly installed for this GPU, then the **Pisets** will transcribe your speech very quickly. So, the real-time factor (xRT), defined as the ratio between the time it takes to process the input and the duration of the input, is approximately 0.15 - 0.25 (it depends on the concrete GPU type). But if you use CPU only, then the **Pisets** will calculate your speech transcription significantly slower (xRT is approximately 1.0 - 1.5).  
+
 ### Docker and REST-API
 
 Installation of the **Pisets** can be difficult, especially for Windows users (in Linux it is trivial). Accordingly, in order to simplify the installation process and hide all the difficulties from the user, I suggest using a docker container that is deployed and runs on any operating system. In this case, audio transmission for recognition and receiving transcription results is carried out by means of the REST API.
@@ -81,7 +83,46 @@ After building (or pulling) you have to run this docker container:
 docker run -p 127.0.0.1:8040:8040 pisets:0.1
 ```
 
-Hurray! The docker container is ready for use, and the **Pisets** will transcribe your speech.
+Hurray! The docker container is ready for use, and the **Pisets** will transcribe your speech. You can use the Python client for the **Pisets** service in the script [client_ru_demo.py](https://github.com/bond005/pisets/blob/main/client_ru_demo.py):
+
+```shell
+python client_ru_demo.py \
+    -i /path/to/your/sound/or/video.m4a \
+    -o /path/to/resulted/transcription.srt
+```
+
+But the easiest way is to use a special virtual machine with the **Pisets** in Yandex Cloud. This is an example [curl](https://curl.se/) for transcribing your speech with the **Pisets** in the Unix-like OS:
+
+```shell
+echo -e $(curl -X POST 178.154.244.147:8040/transcribe -F "audio=@/path/to/your/sound/or/video.m4a" | awk '{ print substr( $0, 2, length($0)-2 ) }') > /path/to/resulted/transcription.srt
+```
+
+#### Important notes
+1. The **Pisets** in the abovementioned docker container currently supports only Russian. If you want to transcribe English speech, then you have use the command-line tool `speech_to_srt.py`.
+
+2. This docker container, unlike the command-line tool, does not support GPU.
+
+## Models and algorithms
+
+The **Pisets** transcribes speech signal in four steps:
+
+1. The acoustic deep neural network, based on fine-tuned [Wav2Vec2](https://arxiv.org/abs/2006.11477), performs the primary recognition of the speech signal and calculates the probabilities of the recognized letters. So the result of the first step is a probability matrix.
+2. The statistical N-gram language model translates the probability matrix into recognized text using a CTC beam search decoder.
+3. The language deep neural network, based on fine-tuned [T5](https://arxiv.org/abs/2010.11934), corrects possible errors and generates the final recognition text in a "pure" form (without punctuations, only in lowercase, and so on). 
+4. The last component of the "Pisets" places punctuation marks and capital letters.
+
+The first and the second steps for English speech are implemented with Patrick von Platen's [Wav2Vec2-Base-960h + 4-gram](https://huggingface.co/patrickvonplaten/wav2vec2-large-960h-lv60-self-4-gram), and Russian speech transcribing is based on my [Wav2Vec2-Large-Ru-Golos-With-LM](https://huggingface.co/bond005/wav2vec2-large-ru-golos-with-lm).
+
+The third step is not supported for English speech, but it is based on my [ruT5-ASR](https://huggingface.co/bond005/ruT5-ASR) for Russian speech.
+
+The fourth step is realized on basis of [the multilingual text enhancement model created by Silero](https://github.com/snakers4/silero-models#text-enhancement).
+
+My tests show a strong superiority of the recognition system based on the given scheme over Whisper Medium, and a significant superiority over Whisper Large when transcribing Russian speech. The methodology and test results are open:
+
+- Wav2Vec2 + 3-gram LM + T5-ASR for Russian: https://www.kaggle.com/code/bond005/wav2vec2-ru-lm-t5-eval
+- Whisper Medium for Russian: https://www.kaggle.com/code/bond005/whisper-medium-ru-eval
+
+Also, you can see the independent evaluation of my [ Wav2Vec2-Large-Ru-Golos-With-LM](https://huggingface.co/bond005/wav2vec2-large-ru-golos-with-lm) model (without T5-based rescorer) on various Russian speech corpora in comparison with other open Russian speech recognition models: https://alphacephei.com/nsh/2023/01/22/russian-models.html (in Russian). 
 
 ## Contact
 
