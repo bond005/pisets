@@ -7,7 +7,7 @@ This project represents a python library and service for automatic speech recogn
 
 You can generate subtitles in the [SubRip format](https://en.wikipedia.org/wiki/SubRip) for any audio or video which is supported with [FFmpeg software](https://en.wikipedia.org/wiki/FFmpeg).
 
-The "pisets" is Russian word (in Cyrillic, "писец") for denoting a person who writes down the text, including dictation (the corresponding English term is "scribe"). Thus, if you need to make a text transcript of an audio recording of a meeting or seminar, then the artificial "Pisets" will help you.
+The "**pisets**" is Russian word (in Cyrillic, "писец") for denoting a person who writes down the text, including dictation (the corresponding English term is "scribe"). Thus, if you need to make a text transcript of an audio recording of a meeting or seminar, then the artificial "**Pisets**" will help you.
 
 ## Installation
 
@@ -36,7 +36,52 @@ python -m unittest
 
 ## Usage
 
-Text...
+### Command prompt
+
+Usage of the **Pisets** is very simple. You have to write the following command in your command prompt:
+
+```shell
+python speech_to_srt.py \
+    -i /path/to/your/sound/or/video.m4a \
+    -o /path/to/resulted/transcription.srt \
+    -lang ru \
+    -r \
+    -f 50
+```
+
+The **1st** argument `-i` specifies the name of the source audio or video in any format supported by FFmpeg. 
+
+The **2st** argument `-o` specifies the name of the resulting SubRip file into which the recognized transcription will be written.
+
+Other arguments are not required. If you do not specify them, then their default values will be used. But I think, that their description matters for any user. So, `-lang` specifies the used language. You can select Russian (*ru*, *rus*, *russian*) or English (*en*, *eng*, *english*). The default language is Russian.
+
+`-r` indicates the need for a more smart rescoring of speech hypothesis with a large language model as like as T5. This option is possible for Russian only, but it is important for good quality of generated transcription. Thus, I highly recommend using the option `-r` if you want to transcribe a Russian speech signal.
+
+`-f` sets the maximum duration of the sound frame (in seconds). The fact is that the **Pisets** is designed so that a very long audio signal is divided into smaller sound frames, then these frames are recognized independently, and the recognition results are glued together into a single transcription. The need for such a procedure is due to the architecture of the acoustic neural network. And this argument determines the maximum duration of such frame, as defined above. The default value is 50 seconds, and I don't recommend changing it.
+
+### Docker and REST-API
+
+Installation of the **Pisets** can be difficult, especially for Windows users (in Linux it is trivial). Accordingly, in order to simplify the installation process and hide all the difficulties from the user, I suggest using a docker container that is deployed and runs on any operating system. In this case, audio transmission for recognition and receiving transcription results is carried out by means of the REST API.
+
+You can build the docker container youself:
+
+```shell
+docker build -t bond005/pisets:0.1 .
+```
+
+But the easiest way is to download the built image from Docker-Hub:
+
+```shell
+docker pull bond005/pisets:0.1
+```
+
+After building (or pulling) you have to run this docker container:
+
+```shell
+docker run -p 127.0.0.1:8040:8040 pisets:0.1
+```
+
+Hurray! The docker container is ready for use, and the **Pisets** will transcribe your speech.
 
 ## Contact
 
