@@ -13,7 +13,7 @@ scikit-optimize>=0.9.0
 sentencepiece>=0.1.95
 torch==2.0.0
 torchaudio==2.0.0
-torchvision==0.15.0
+torchvision==0.15.1
 tokenizers>=0.11.4
 transformers>=4.21.3
 webrtcvad>=2.0.10
