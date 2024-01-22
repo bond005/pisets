@@ -19,9 +19,7 @@ segmentation_dataset_logger = logging.getLogger(__name__)
 def main():
     parser = ArgumentParser()
     parser.add_argument('-i', '--input', dest='input_name', type=str, required=True,
-                        help='The input dataset in the Huggingface-compatible format.')
-    parser.add_argument('-c', '--column', dest='column_name', type=str, required=True,
-                        help='The text column in the input dataset.')
+                        help='The input dataset for post-ASR correction.')
     parser.add_argument('-o', '--output', dest='output_name', type=str, required=True,
                         help='The output dataset for segmentation.')
     parser.add_argument('-m', '--model', dest='model_name', type=str, required=True,
@@ -49,14 +47,8 @@ def main():
         segmentation_dataset_logger.error(err_msg)
         raise ValueError(err_msg)
 
-    column_name = args.column_name.strip()
-    if len(column_name) == 0:
-        err_msg = 'The column name is empty.'
-        segmentation_dataset_logger.error(err_msg)
-        raise ValueError(err_msg)
-
     model_name = os.path.normpath(args.model_name)
-    if not os.path.isdir(input_fname):
+    if not os.path.isdir(model_name):
         err_msg = f'The directory "{model_name}" does not exist!'
         segmentation_dataset_logger.error(err_msg)
         raise IOError(err_msg)
@@ -67,7 +59,7 @@ def main():
 
     if args.base_model_name is not None:
         base_model_name = os.path.normpath(args.base_model_name)
-        if not os.path.isdir(input_fname):
+        if not os.path.isdir(base_model_name):
             err_msg = f'The directory "{base_model_name}" does not exist!'
             segmentation_dataset_logger.error(err_msg)
             raise IOError(err_msg)
@@ -92,12 +84,26 @@ def main():
     info_msg = (f'The dataset "{input_fname}" is loaded. The column names are: {input_dataset.column_names}. '
                 f'The dataset size is {len(input_dataset)}.')
     segmentation_dataset_logger.info(info_msg)
-    if column_name not in input_dataset.column_names:
-        err_msg = f'The column "{column_name}" is not found in the dataset "{input_fname}".'
+    if 'input' not in input_dataset.column_names:
+        err_msg = f'The column "input" is not found in the dataset "{input_fname}".'
+        segmentation_dataset_logger.error(err_msg)
+        raise ValueError(err_msg)
+    if 'target' not in input_dataset.column_names:
+        err_msg = f'The column "input" is not found in the dataset "{input_fname}".'
         segmentation_dataset_logger.error(err_msg)
         raise ValueError(err_msg)
 
-    input_texts = sorted(list(set([cur[column_name] for cur in input_dataset])))
+    input_texts = []
+    instructions = []
+    for cur in input_dataset:
+        input_texts.append(cur['target'])
+        instructions.append(
+            (
+                '<LM>Исправь, пожалуйста, ошибки распознавания речи в следующем тексте. ' + cur['input'],
+                cur['target'] + '</s>'
+            )
+        )
+    input_texts = sorted(list(set(input_texts)))
     del input_dataset
     segmentation_dataset_logger.info(f'There are {len(input_texts)} input texts after deduplication.')
 
@@ -112,18 +118,23 @@ def main():
     with codecs.open(output_fname, mode='w', encoding='utf-8') as fp:
         csv_writer = csv.writer(fp, delimiter=',', quotechar='"')
         csv_writer.writerow(['input', 'target'])
+        for input_prompt, true_response in instructions:
+            csv_writer.writerow([input_prompt, true_response])
+        del instructions
         for cur_text in tqdm(input_texts):
+            new_prompt = build_prompt_for_simplification(cur_text)
             try:
                 simpler_text = generate_answer_with_saiga_mistral(
-                    prompt=build_prompt_for_simplification(cur_text),
+                    prompt=new_prompt,
                     tokenizer=tokenizer,
                     model=model,
                     generation=generation
                 )
             except BaseException as ex:
-                err_msg = str(ex)
+                err_msg = str(ex) + ' ' + new_prompt
                 segmentation_dataset_logger.error(err_msg)
                 raise
+            del new_prompt
             simpler_text = ' '.join(simpler_text.strip().split())
             if len(simpler_text) > 0:
                 input_prompt = '<LM>Упрости, пожалуйста, следующий текст. ' + ' '.join(cur_text.strip().split())
@@ -133,17 +144,19 @@ def main():
             else:
                 warn_msg = f'{simpler_text} cannot be simplified.'
                 segmentation_dataset_logger.warning(warn_msg)
+            new_prompt = build_prompt_for_detalization(cur_text)
             try:
                 long_text = generate_answer_with_saiga_mistral(
-                    prompt=build_prompt_for_detalization(cur_text),
+                    prompt=new_prompt,
                     tokenizer=tokenizer,
                     model=model,
                     generation=generation
                 )
             except BaseException as ex:
-                err_msg = str(ex)
+                err_msg = str(ex) + ' ' + new_prompt
                 segmentation_dataset_logger.error(err_msg)
                 raise
+            del new_prompt
             if '\n' in long_text:
                 short_segments = list(filter(
                     lambda it2: len(it2) > 0,
@@ -154,17 +167,19 @@ def main():
                     true_response = '\n'.join(short_segments) + '</s>'
                     csv_writer.writerow([input_prompt, true_response])
                     del input_prompt, true_response
+                    new_prompt = build_prompt_for_simplification(' '.join(short_segments))
                     try:
                         annotation = generate_answer_with_saiga_mistral(
-                            prompt=build_prompt_for_simplification(' '.join(short_segments)),
+                            prompt=new_prompt,
                             tokenizer=tokenizer,
                             model=model,
                             generation=generation
                         )
                     except BaseException as ex:
-                        err_msg = str(ex)
+                        err_msg = str(ex) + ' ' + new_prompt
                         segmentation_dataset_logger.error(err_msg)
                         raise
+                    del new_prompt
                     annotation = ' '.join(annotation.strip().split())
                     if len(annotation) > 0:
                         input_prompt = ('<LM>Выполни саммаризацию и выдели, пожалуйста, основную мысль '

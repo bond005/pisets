@@ -87,7 +87,9 @@ def build_prompt_for_simplification(source_text: str) -> str:
     if len(prepared_text) == 0:
         saiga_mistral_logger.warning('The input text is empty!')
         return ''
-    return 'Упрости и сократи, пожалуйста, следующий текст. ' + prepared_text
+    prompt = 'Упрости и сократи, пожалуйста, следующий текст, выразив основную мысль одним-двумя предложениями. '
+    prompt += prepared_text
+    return prompt
 
 
 def generate_answer_with_saiga_mistral(prompt: str, tokenizer: LlamaTokenizer, model: PeftModel,
