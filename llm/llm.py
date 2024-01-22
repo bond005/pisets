@@ -1,6 +1,7 @@
 import logging
 from typing import Optional, Tuple
 
+from rusenttokenize import ru_sent_tokenize
 import torch
 from peft import PeftModel, PeftConfig
 from transformers import MistralForCausalLM, LlamaTokenizer, GenerationConfig
@@ -92,6 +93,38 @@ def build_prompt_for_simplification(source_text: str) -> str:
     return prompt
 
 
+def filter_sentences(text: str) -> str:
+    sentences = ru_sent_tokenize(text)
+    sentence_bounds = []
+    start_pos = 0
+    for cur_sent in sentences:
+        found_idx = text[start_pos:].find(cur_sent)
+        if found_idx < 0:
+            err_msg = f'{text} cannot be tokenized!'
+            saiga_mistral_logger.error(err_msg)
+            raise ValueError(err_msg)
+        sentence_start = start_pos + found_idx
+        sentence_end = sentence_start + len(cur_sent)
+        sentence_bounds.append((sentence_start, sentence_end))
+        start_pos = sentence_end
+    filtered_text = ' '
+    for sentence_start, sentence_end in sentence_bounds:
+        if text[sentence_start:sentence_end].find('') < 0:
+            filtered_text += (text[sentence_start:sentence_end] + ' ')
+    return ' '.join(filtered_text.strip().split(' '))
+
+
+def remove_introduction(text: str) -> str:
+    found_idx = text.find(':')
+    if found_idx < 0:
+        return text
+    if found_idx > (2 * len(text)) // 3:
+        return text
+    if text.lower().startswith('вот '):
+        return text[(found_idx + 1):].strip()
+    return text
+
+
 def generate_answer_with_saiga_mistral(prompt: str, tokenizer: LlamaTokenizer, model: PeftModel,
                                        generation: GenerationConfig) -> str:
     prepared_prompt = ' '.join(prompt.strip().split())
@@ -109,4 +142,4 @@ def generate_answer_with_saiga_mistral(prompt: str, tokenizer: LlamaTokenizer, m
     )[0]
     output_ids = output_ids[len(data['input_ids'][0]):]
     output = tokenizer.decode(output_ids, skip_special_tokens=True)
-    return output.strip()
+    return remove_introduction(filter_sentences(output))

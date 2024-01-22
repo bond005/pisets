@@ -136,7 +136,7 @@ def main():
                 raise
             del new_prompt
             simpler_text = ' '.join(simpler_text.strip().split())
-            if len(simpler_text) > 0:
+            if (len(simpler_text) > 0) and (len(simpler_text) < len(cur_text)):
                 input_prompt = '<LM>Упрости, пожалуйста, следующий текст. ' + ' '.join(cur_text.strip().split())
                 true_response = simpler_text + '</s>'
                 csv_writer.writerow([input_prompt, true_response])
@@ -157,7 +157,7 @@ def main():
                 segmentation_dataset_logger.error(err_msg)
                 raise
             del new_prompt
-            if '\n' in long_text:
+            if ('\n' in long_text) and (len(long_text) > (2 * len(cur_text))):
                 short_segments = list(filter(
                     lambda it2: len(it2) > 0,
                     map(lambda it1: ' '.join(it1.strip().split()), long_text.split('\n'))
