@@ -93,26 +93,6 @@ def build_prompt_for_simplification(source_text: str) -> str:
     return prompt
 
 
-def filter_sentences(text: str) -> str:
-    sentences = ru_sent_tokenize(text)
-    sentence_bounds = []
-    start_pos = 0
-    for cur_sent in sentences:
-        found_idx = text[start_pos:].find(cur_sent)
-        if found_idx < 0:
-            err_msg = f'{text} cannot be tokenized!'
-            saiga_mistral_logger.error(err_msg)
-            raise ValueError(err_msg)
-        sentence_start = start_pos + found_idx
-        sentence_end = sentence_start + len(cur_sent)
-        sentence_bounds.append((sentence_start, sentence_end))
-        start_pos = sentence_end
-    filtered_text = ' '
-    for sentence_start, sentence_end in sentence_bounds:
-        if text[sentence_start:sentence_end].find('') < 0:
-            filtered_text += (text[sentence_start:sentence_end] + ' ')
-    return ' '.join(filtered_text.strip().split(' '))
-
 
 def remove_introduction(text: str) -> str:
     found_idx = text.find(':')
@@ -141,5 +121,9 @@ def generate_answer_with_saiga_mistral(prompt: str, tokenizer: LlamaTokenizer, m
         generation_config=generation
     )[0]
     output_ids = output_ids[len(data['input_ids'][0]):]
-    output = tokenizer.decode(output_ids, skip_special_tokens=True)
-    return remove_introduction(filter_sentences(output))
+    output = tokenizer.decode(output_ids, skip_special_tokens=True).strip()
+    res = remove_introduction(output)
+    if len(res) == 0:
+        saiga_mistral_logger.warning(f'The generated output is empty for the next prompt! {ful_prompt}')
+    return res
+

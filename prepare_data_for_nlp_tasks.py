@@ -3,6 +3,7 @@ from argparse import ArgumentParser
 import codecs
 import logging
 import os
+import random
 import sys
 
 from datasets import load_dataset, disable_caching
@@ -106,6 +107,7 @@ def main():
     input_texts = sorted(list(set(input_texts)))
     del input_dataset
     segmentation_dataset_logger.info(f'There are {len(input_texts)} input texts after deduplication.')
+    random.shuffle(input_texts)
 
     try:
         tokenizer, model, generation = initialize_saiga_mistral(model_name, base_model_name)
@@ -121,7 +123,8 @@ def main():
         for input_prompt, true_response in instructions:
             csv_writer.writerow([input_prompt, true_response])
         del instructions
-        for cur_text in tqdm(input_texts):
+        counter = 0
+        for cur_text in input_texts:
             new_prompt = build_prompt_for_simplification(cur_text)
             try:
                 simpler_text = generate_answer_with_saiga_mistral(
@@ -141,8 +144,12 @@ def main():
                 true_response = simpler_text + '</s>'
                 csv_writer.writerow([input_prompt, true_response])
                 del input_prompt, true_response
+                counter += 1
+                if counter % 5 == 0:
+                    fp.flush()
+                    segmentation_dataset_logger.info(f'{counter} samples from {len(input_texts)} are processed.')
             else:
-                warn_msg = f'{simpler_text} cannot be simplified.'
+                warn_msg = f'{cur_text} cannot be simplified, because the result is not simpler. {simpler_text}'
                 segmentation_dataset_logger.warning(warn_msg)
             new_prompt = build_prompt_for_detalization(cur_text)
             try:
@@ -157,7 +164,7 @@ def main():
                 segmentation_dataset_logger.error(err_msg)
                 raise
             del new_prompt
-            if ('\n' in long_text) and (len(long_text) > (2 * len(cur_text))):
+            if long_text.find('\n') >= 0:
                 short_segments = list(filter(
                     lambda it2: len(it2) > 0,
                     map(lambda it1: ' '.join(it1.strip().split()), long_text.split('\n'))
@@ -167,6 +174,10 @@ def main():
                     true_response = '\n'.join(short_segments) + '</s>'
                     csv_writer.writerow([input_prompt, true_response])
                     del input_prompt, true_response
+                    counter += 1
+                    if counter % 5 == 0:
+                        fp.flush()
+                        segmentation_dataset_logger.info(f'{counter} samples from {len(input_texts)} are processed.')
                     new_prompt = build_prompt_for_simplification(' '.join(short_segments))
                     try:
                         annotation = generate_answer_with_saiga_mistral(
@@ -188,6 +199,10 @@ def main():
                         true_response = annotation + '</s>'
                         csv_writer.writerow([input_prompt, true_response])
                         del input_prompt, true_response
+                        counter += 1
+                        if counter % 5 == 0:
+                            fp.flush()
+                            segmentation_dataset_logger.info(f'{counter} samples from {len(input_texts)} are processed.')
                     else:
                         warn_msg = f'{" ".join(short_segments)} cannot be simplified.'
                         segmentation_dataset_logger.warning(warn_msg)
