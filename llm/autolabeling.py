@@ -1,7 +1,6 @@
 import logging
 from typing import Optional, Tuple
 
-from rusenttokenize import ru_sent_tokenize
 import torch
 from peft import PeftModel, PeftConfig
 from transformers import MistralForCausalLM, LlamaTokenizer, GenerationConfig

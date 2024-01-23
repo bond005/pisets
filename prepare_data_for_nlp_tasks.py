@@ -7,7 +7,6 @@ import random
 import sys
 
 from datasets import load_dataset, disable_caching
-from tqdm import tqdm
 
 from llm.autolabeling import initialize_saiga_mistral, generate_answer_with_saiga_mistral
 from llm.autolabeling import build_prompt_for_detalization, build_prompt_for_simplification
