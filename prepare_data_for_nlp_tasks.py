@@ -1,6 +1,6 @@
-import csv
 from argparse import ArgumentParser
 import codecs
+import csv
 import logging
 import os
 import random
@@ -21,7 +21,7 @@ def main():
     parser.add_argument('-i', '--input', dest='input_name', type=str, required=True,
                         help='The input dataset for post-ASR correction.')
     parser.add_argument('-o', '--output', dest='output_name', type=str, required=True,
-                        help='The output dataset for segmentation.')
+                        help='The output dataset for multi-task LLM.')
     parser.add_argument('-m', '--model', dest='model_name', type=str, required=True,
                         help='The adapter of the Saiga Mistral LLM by Ilya Gusev.')
     parser.add_argument('-b', '--base', dest='base_model_name', type=str, required=False, default=None,
