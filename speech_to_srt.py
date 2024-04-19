@@ -27,9 +27,7 @@ def main():
                         help='The input sound file name or YouTube URL.')
     parser.add_argument('-o', '--output', dest='output_name', type=str, required=True,
                         help='The output SubRip file name.')
-    parser.add_argument('-r', '--rescorer', dest='rescorer', action='store_true',
-                        help='The necessity to use the T5 transformer as a rescorer.')
-    parser.add_argument('-f', '--frame', dest='sound_frame', type=int, default=50, required=False,
+    parser.add_argument('-f', '--frame', dest='sound_frame', type=int, default=20, required=False,
                         help='The maximum size of the sound frame (in seconds).')
     args = parser.parse_args()
 
@@ -37,9 +35,9 @@ def main():
     model_of_rescorer = None
 
     frame_size = args.sound_frame
-    if (frame_size <= 10) or (frame_size >= 70):
+    if (frame_size <= 10) or (frame_size >= 30):
         err_msg = f'The maximum size of the sound frame has a wrong value! ' \
-                  f'Expected an integer greater than 10 and less than 70, got {frame_size}.'
+                  f'Expected an integer greater than 10 and less than 30, got {frame_size}.'
         speech_to_srt_logger.error(err_msg)
         raise IOError(err_msg)
 
