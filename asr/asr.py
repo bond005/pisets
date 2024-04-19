@@ -3,11 +3,13 @@ from typing import List, Tuple
 import numpy as np
 import torch
 from transformers import pipeline, Pipeline
+from transformers import WhisperProcessor, WhisperForConditionalGeneration, GenerationConfig
 
 from wav_io.wav_io import TARGET_SAMPLING_FREQUENCY
 
 
-MIN_SOUND_LENGTH = 1600
+MIN_SOUND_LENGTH: int = 1600
+WHISPER_NUM_BEAMS: int = 5
 
 
 def initialize_model_for_speech_segmentation(language: str = 'ru') -> Pipeline:
@@ -129,3 +131,28 @@ def segmentate_sound(mono_sound: np.ndarray, segmenter: Pipeline,
                 segments[idx] = (segments[idx][0] + overlap / 2.0, segments[idx][1])
 
     return segments
+
+
+def recognize_sound(mono_sound: np.ndarray, processor: WhisperProcessor, model: WhisperForConditionalGeneration,
+                    config: GenerationConfig, lang: str) -> str:
+    if not isinstance(mono_sound, np.ndarray):
+        err_msg = f'The sound is wrong! Expected {type(np.array([1, 2]))}, got {type(mono_sound)}.'
+        raise ValueError(err_msg)
+    if len(mono_sound.shape) != 1:
+        err_msg = f'The sound channel number is wrong! Expected 1, got {len(mono_sound.shape)}.'
+        raise ValueError(err_msg)
+    if mono_sound.shape[0] <= MIN_SOUND_LENGTH:
+        err_msg = f'The sound length = {mono_sound.shape[0]} is too short. ' \
+                  f'The expected length should be greater than {MIN_SOUND_LENGTH}.'
+        raise ValueError(err_msg)
+
+    inputs = processor(mono_sound, return_tensors='pt')
+    input_features = inputs.input_features
+    del inputs
+    with torch.no_grad():
+        generated_ids = model.generate(inputs=input_features.to(model.device), generation_config=config,
+                                       num_beams=WHISPER_NUM_BEAMS, task='transcribe', language=lang)
+    del input_features
+    transcription = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+    del generated_ids
+    return transcription
