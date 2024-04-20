@@ -206,7 +206,7 @@ def recognize_sounds(sounds: List[np.ndarray], processor: WhisperProcessor, mode
             input_features = inputs.input_features
             del inputs
             with torch.no_grad():
-                generated_ids = model.generate(inputs=input_features.to(model.device), generation_config=config)
+                generated_ids = model.generate(inputs=input_features.to(model.device).half(), generation_config=config)
             del input_features
             transcriptions = processor.batch_decode(generated_ids, skip_special_tokens=True)
             del generated_ids
@@ -217,7 +217,7 @@ def recognize_sounds(sounds: List[np.ndarray], processor: WhisperProcessor, mode
         input_features = inputs.input_features
         del inputs
         with torch.no_grad():
-            generated_ids = model.generate(inputs=input_features.to(model.device), generation_config=config)
+            generated_ids = model.generate(inputs=input_features.to(model.device).half(), generation_config=config)
         del input_features
         all_transcriptions = processor.batch_decode(generated_ids, skip_special_tokens=True)
         del generated_ids
