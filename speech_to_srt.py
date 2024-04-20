@@ -10,7 +10,7 @@ from wav_io.wav_io import transform_to_wavpcm, load_sound
 from wav_io.wav_io import TARGET_SAMPLING_FREQUENCY
 from asr.asr import initialize_model_for_speech_recognition
 from asr.asr import initialize_model_for_speech_segmentation
-from asr.asr import transcribe
+from asr.asr import transcribe, check_language
 from asr.asr import asr_logger
 from utils.utils import time_to_str
 
@@ -29,6 +29,8 @@ def main():
     parser.add_argument('-f', '--frame', dest='sound_frame', type=int, default=20, required=False,
                         help='The maximum size of the sound frame (in seconds).')
     args = parser.parse_args()
+
+    language_name = check_language(args.language)
 
     frame_size = args.sound_frame
     if (frame_size <= 10) or (frame_size >= 30):
@@ -95,7 +97,7 @@ def main():
                                   f'{time_to_str(input_sound.shape[0] / TARGET_SAMPLING_FREQUENCY)}.')
 
         try:
-            segmenter = initialize_model_for_speech_segmentation(args.language_name)
+            segmenter = initialize_model_for_speech_segmentation(language_name)
         except BaseException as ex:
             err_msg = str(ex)
             speech_to_srt_logger.error(err_msg)
@@ -103,7 +105,7 @@ def main():
         speech_to_srt_logger.info('The Wav2Vec2-based segmenter is loaded.')
 
         try:
-            asr = initialize_model_for_speech_recognition(args.language_name)
+            asr = initialize_model_for_speech_recognition(language_name)
         except BaseException as ex:
             err_msg = str(ex)
             speech_to_srt_logger.error(err_msg)

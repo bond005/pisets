@@ -2,6 +2,7 @@ import logging
 from typing import List, Optional, Tuple
 
 import math
+from nltk import wordpunct_tokenize
 import numpy as np
 from tqdm import trange
 import torch
@@ -15,6 +16,19 @@ MIN_SOUND_LENGTH: int = 1600
 WHISPER_NUM_BEAMS: int = 5
 MINIBATCH_SIZE: int = 4
 asr_logger = logging.getLogger(__name__)
+
+
+def check_language(lang: str) -> str:
+    lang_ = ' '.join(list(filter(lambda it: it.isalnum(), wordpunct_tokenize(lang)))).lower()
+    if lang_ in {'en', 'eng', 'engl', 'english'}:
+        language_name = 'en'
+    else:
+        language_name = 'ru'
+        if lang_ not in {'ru', 'russ', 'rus', 'russian'}:
+            err_msg = f'The language {lang} is not supported!'
+            asr_logger.error(err_msg)
+            raise RuntimeError(err_msg)
+    return language_name
 
 
 def initialize_model_for_speech_segmentation(language: str = 'ru', model_info: Optional[str] = None) -> Pipeline:
