@@ -28,7 +28,7 @@ class TestRussianASR(unittest.TestCase):
             torch.cuda.empty_cache()
         else:
             cls.cuda_is_used = False
-        cls.sound = load_sound(os.path.join(os.path.dirname(__file__), 'testdata', 'test_sound_en.wav'))
+        cls.sound = load_sound(os.path.join(os.path.dirname(__file__), 'testdata', 'test_sound_ru.wav'))
         cls.segmenter = initialize_model_for_speech_segmentation(
             'ru',
             'bond005/wav2vec2-base-ru-birm'
