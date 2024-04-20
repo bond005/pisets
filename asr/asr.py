@@ -216,7 +216,8 @@ def recognize_sounds(sounds: List[np.ndarray], processor: WhisperProcessor, mode
         for batch_idx in trange(n_batches):
             batch_start = batch_idx * MINIBATCH_SIZE
             batch_end = min(len(sounds), batch_start + MINIBATCH_SIZE)
-            inputs = processor(sounds[batch_start:batch_end], return_tensors='pt')
+            inputs = processor(sounds[batch_start:batch_end], return_tensors='pt',
+                               sampling_rate=TARGET_SAMPLING_FREQUENCY)
             input_features = inputs.input_features
             del inputs
             with torch.no_grad():
@@ -227,7 +228,8 @@ def recognize_sounds(sounds: List[np.ndarray], processor: WhisperProcessor, mode
             all_transcriptions += transcriptions
             del transcriptions
     else:
-        inputs = processor(sounds, return_tensors='pt')
+        inputs = processor(sounds, return_tensors='pt',
+                           sampling_rate=TARGET_SAMPLING_FREQUENCY)
         input_features = inputs.input_features
         del inputs
         with torch.no_grad():
