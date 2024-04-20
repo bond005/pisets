@@ -132,8 +132,9 @@ def transcribe():
             output_text += (' ' + sentence_text)
         output_text = ' '.join(output_text.split())
         old_sounds.clear()
-        last_segment_start = round(texts_with_timestamps[-1][0] * TARGET_SAMPLING_FREQUENCY)
-        old_sounds.append(input_sound[-last_segment_start:])
+        if len(texts_with_timestamps) > 0:
+            last_segment_start = round(texts_with_timestamps[-1][0] * TARGET_SAMPLING_FREQUENCY)
+            old_sounds.append(input_sound[-last_segment_start:])
 
     resp = jsonify(output_text)
     resp.status_code = 200
