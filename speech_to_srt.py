@@ -30,9 +30,6 @@ def main():
                         help='The maximum size of the sound frame (in seconds).')
     args = parser.parse_args()
 
-    tokenizer_for_rescorer = None
-    model_of_rescorer = None
-
     frame_size = args.sound_frame
     if (frame_size <= 10) or (frame_size >= 30):
         err_msg = f'The maximum size of the sound frame has a wrong value! ' \
