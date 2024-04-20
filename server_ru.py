@@ -1,17 +1,16 @@
 import logging
 import os
 import tempfile
+from typing import List
 
 from flask import Flask, request, jsonify
 import numpy as np
 
 from wav_io.wav_io import transform_to_wavpcm, load_sound
 from wav_io.wav_io import TARGET_SAMPLING_FREQUENCY
-from vad.vad import initialize_vad_ensemble, split_long_sound
-from asr.asr import recognize, initialize_model
-from rescoring.rescoring import initialize_rescorer, rescore
-from normalization.normalization import initialize_normalizer
-from normalization.normalization import tokenize_text, normalize_text, calculate_sentence_bounds
+from asr.asr import initialize_model_for_speech_recognition
+from asr.asr import initialize_model_for_speech_segmentation
+from asr.asr import transcribe
 from utils.utils import time_to_str
 
 
@@ -20,40 +19,25 @@ logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s',
                     level=logging.INFO)
 app = Flask(__name__)
 
-FRAME_SIZE = 50
+FRAME_SIZE = 20
 LANGUAGE_NAME = 'ru'
+old_sounds: List[np.ndarray] = []
 
 try:
-    processor, model = initialize_model(LANGUAGE_NAME)
+    segmenter = initialize_model_for_speech_segmentation(LANGUAGE_NAME)
 except BaseException as ex:
     err_msg = str(ex)
     speech_to_srt_logger.error(err_msg)
     raise
-speech_to_srt_logger.info('The model and processor are loaded.')
+speech_to_srt_logger.info('The Wav2Vec2-based segmenter is loaded.')
 
 try:
-    tokenizer_for_rescorer, model_of_rescorer = initialize_rescorer(LANGUAGE_NAME)
+    asr = initialize_model_for_speech_recognition(LANGUAGE_NAME)
 except BaseException as ex:
     err_msg = str(ex)
     speech_to_srt_logger.error(err_msg)
     raise
-speech_to_srt_logger.info('The rescorer is loaded.')
-
-try:
-    vad = initialize_vad_ensemble()
-except BaseException as ex:
-    err_msg = str(ex)
-    speech_to_srt_logger.error(err_msg)
-    raise
-speech_to_srt_logger.info('The VAD is initialized.')
-
-try:
-    text_normalizer = initialize_normalizer()
-except BaseException as ex:
-    err_msg = str(ex)
-    speech_to_srt_logger.error(err_msg)
-    raise
-speech_to_srt_logger.info('The text normalizer is initialized.')
+speech_to_srt_logger.info('The Whisper-based ASR is initialized.')
 
 
 @app.route('/ready')
@@ -131,131 +115,26 @@ def transcribe():
     if not isinstance(input_sound, np.ndarray):
         speech_to_srt_logger.info(f'The sound "{file.filename}" is stereo.')
         input_sound = (input_sound[0] + input_sound[1]) / 2.0
-    speech_to_srt_logger.info(f'The total duration of the sound "{file.filename}" is '
+    speech_to_srt_logger.info(f'The total duration of the new sound "{file.filename}" is '
                               f'{time_to_str(input_sound.shape[0] / TARGET_SAMPLING_FREQUENCY)}.')
 
-    try:
-        sound_frames, frame_bounds = split_long_sound(input_sound, vad, max_sound_len=FRAME_SIZE * 16_000)
-    except BaseException as ex:
-        err_msg = str(ex)
-        speech_to_srt_logger.error('400: ' + err_msg)
-        resp = jsonify({'message': err_msg})
-        resp.status_code = 400
-        return resp
-    speech_to_srt_logger.info(f'The sound "{file.filename}" is divided into {len(sound_frames)} shorter frames.')
-    try:
-        words = recognize(sound_frames[0], processor, model)
-    except BaseException as ex:
-        err_msg = str(ex)
-        speech_to_srt_logger.error('400: ' + err_msg)
-        resp = jsonify({'message': err_msg})
-        resp.status_code = 400
-        return resp
-    speech_to_srt_logger.info(f'The sound frame 1 is recognized '
-                              f'(the frame duration is {sound_frames[0].shape[0] / TARGET_SAMPLING_FREQUENCY}).')
-    if (tokenizer_for_rescorer is not None) and (model_of_rescorer is not None):
-        try:
-            words = rescore(words, tokenizer_for_rescorer, model_of_rescorer)
-        except BaseException as ex:
-            err_msg = str(ex)
-            speech_to_srt_logger.error('400: ' + err_msg)
-            resp = jsonify({'message': err_msg})
-            resp.status_code = 400
-            return resp
-        speech_to_srt_logger.info('The sound frame 1 is rescored.')
-    try:
-        sentences = tokenize_text(
-            s=normalize_text(
-                s=' '.join([cur[0] for cur in words]),
-                normalizer=text_normalizer,
-                lang=LANGUAGE_NAME
-            ),
-            lang=LANGUAGE_NAME
-        )
-    except BaseException as ex:
-        err_msg = str(ex)
-        speech_to_srt_logger.error('400: ' + err_msg)
-        resp = jsonify({'message': err_msg})
-        resp.status_code = 400
-        return resp
-    try:
-        sentences_with_bounds = calculate_sentence_bounds(
-            asr_result=words,
-            sentences=sentences
-        )
-    except BaseException as ex:
-        err_msg = str(ex)
-        speech_to_srt_logger.error('400: ' + err_msg)
-        resp = jsonify({'message': err_msg})
-        resp.status_code = 400
-        return resp
-    del words, sentences
-    speech_to_srt_logger.info('The sound frame 1 is normalized and tokenized.')
-
-    for counter, (cur_frame, frame_bounds) in enumerate(zip(sound_frames[1:], frame_bounds[1:])):
-        try:
-            words_ = recognize(cur_frame, processor, model)
-        except BaseException as ex:
-            err_msg = str(ex)
-            speech_to_srt_logger.error('400: ' + err_msg)
-            resp = jsonify({'message': err_msg})
-            resp.status_code = 400
-            return resp
-        speech_to_srt_logger.info(f'The sound frame {counter + 2} is recognized '
-                                  f'(the frame duration is {cur_frame.shape[0] / TARGET_SAMPLING_FREQUENCY}).')
-        if (tokenizer_for_rescorer is not None) and (model_of_rescorer is not None):
-            try:
-                words_ = rescore(words_, tokenizer_for_rescorer, model_of_rescorer)
-            except BaseException as ex:
-                err_msg = str(ex)
-                speech_to_srt_logger.error('400: ' + err_msg)
-                resp = jsonify({'message': err_msg})
-                resp.status_code = 400
-                return resp
-            speech_to_srt_logger.info(f'The sound frame {counter + 2} is rescored.')
-        frame_start = frame_bounds[0] / TARGET_SAMPLING_FREQUENCY
-        words = []
-        for word_text, word_start, word_end in words_:
-            words.append((
-                word_text,
-                word_start + frame_start,
-                word_end + frame_start
-            ))
-        del words_
-        try:
-            sentences = tokenize_text(
-                s=normalize_text(
-                    s=' '.join([cur[0] for cur in words]),
-                    normalizer=text_normalizer,
-                    lang=LANGUAGE_NAME
-                ),
-                lang=LANGUAGE_NAME
-            )
-        except BaseException as ex:
-            err_msg = str(ex)
-            speech_to_srt_logger.error('400: ' + err_msg)
-            resp = jsonify({'message': err_msg})
-            resp.status_code = 400
-            return resp
-        try:
-            sentences_with_bounds += calculate_sentence_bounds(
-                asr_result=words,
-                sentences=sentences
-            )
-        except BaseException as ex:
-            err_msg = str(ex)
-            speech_to_srt_logger.error('400: ' + err_msg)
-            resp = jsonify({'message': err_msg})
-            resp.status_code = 400
-            return resp
-        del words, sentences
-        speech_to_srt_logger.info(f'The sound frame {counter + 2} is normalized and tokenized.')
+    if len(old_sounds) > 0:
+        input_sound = np.concatenate(old_sounds + [input_sound])
+        speech_to_srt_logger.info(f'The total duration of the united sound is '
+                                  f'{time_to_str(input_sound.shape[0] / TARGET_SAMPLING_FREQUENCY)}.')
 
     output_text = ''
-    for counter, (sentence_text, sent_start, sent_end) in enumerate(sentences_with_bounds):
-        output_text += f'{counter + 1}\n'
-        output_text += f'{time_to_str(sent_start)} --> {time_to_str(sent_end)}\n'
-        output_text += f'{sentence_text}\n\n'
+    if input_sound is None:
+        speech_to_srt_logger.info(f'The sound "{file.filename}" is empty.')
+    else:
+        texts_with_timestamps = transcribe(input_sound, segmenter, asr, FRAME_SIZE)
+        for _, _, sentence_text in texts_with_timestamps[:-1]:
+            output_text += (' ' + sentence_text)
+        output_text = ' '.join(output_text.split())
+        old_sounds.clear()
+        last_segment_start = round(texts_with_timestamps[-1][0] * TARGET_SAMPLING_FREQUENCY)
+        old_sounds.append(input_sound[-last_segment_start:])
+
     resp = jsonify(output_text)
     resp.status_code = 200
     return resp
