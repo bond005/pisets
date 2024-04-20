@@ -2,18 +2,21 @@ import os
 import sys
 import unittest
 
+from nltk import wordpunct_tokenize
 import torch
 
 try:
-    from asr.asr import check_annotations_and_hotwords
-    from asr.asr import decode_for_evaluation
-    from asr.asr import recognize, initialize_model
+    from asr.asr import initialize_model_for_speech_recognition
+    from asr.asr import initialize_model_for_speech_segmentation
+    from asr.asr import transcribe
+    from asr.asr import TARGET_SAMPLING_FREQUENCY
     from wav_io.wav_io import load_sound
 except:
     sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-    from asr.asr import check_annotations_and_hotwords
-    from asr.asr import decode_for_evaluation
-    from asr.asr import recognize, initialize_model
+    from asr.asr import initialize_model_for_speech_recognition
+    from asr.asr import initialize_model_for_speech_segmentation
+    from asr.asr import transcribe
+    from asr.asr import TARGET_SAMPLING_FREQUENCY
     from wav_io.wav_io import load_sound
 
 
@@ -26,57 +29,35 @@ class TestEnglishASR(unittest.TestCase):
         else:
             cls.cuda_is_used = False
         cls.sound = load_sound(os.path.join(os.path.dirname(__file__), 'testdata', 'test_sound_en.wav'))
-        cls.processor_en, cls.model_en = initialize_model('en')
+        cls.segmenter = initialize_model_for_speech_segmentation(
+            'en',
+            'facebook/wav2vec2-base-960h'
+        )
+        cls.recognizer = initialize_model_for_speech_recognition(
+            'en',
+            'openai/whisper-small'
+        )
 
     def test_recognize_pos01(self):
-        res = recognize(
+        res = transcribe(
             mono_sound=self.sound,
-            processor=self.processor_en,
-            model=self.model_en
+            segmenter=self.segmenter,
+            asr=self.recognizer,
+            max_segment_size=5
         )
         true_words = ['neural', 'networks', 'are', 'good']
         self.assertIsInstance(res, list)
-        self.assertEqual(len(res), len(true_words))
-        prev_pos = 0.0
-        for idx in range(len(true_words)):
-            self.assertIsInstance(res[idx], tuple)
-            self.assertEqual(len(res[idx]), 3)
-            self.assertIsInstance(res[idx][0], str)
-            self.assertIsInstance(res[idx][1], float)
-            self.assertIsInstance(res[idx][2], float)
-            self.assertEqual(res[idx][0], true_words[idx])
-            self.assertGreaterEqual(res[idx][1], prev_pos)
-            self.assertLess(res[idx][1], res[idx][2])
-            prev_pos = res[idx][2]
-        self.assertLessEqual(prev_pos, self.sound.shape[0] / 16000.0)
-        self.assertGreater(prev_pos, 0.5 * (self.sound.shape[0] / 16000.0))
-
-    def test_recognize_pos02(self):
-        res = recognize(
-            mono_sound=self.sound,
-            processor=self.processor_en,
-            model=self.model_en,
-            alpha=0.565,
-            beta=0.148,
-            hotword_weight=2.0,
-            hotwords=['neural', 'networks']
-        )
-        true_words = ['neural', 'networks', 'are', 'good']
-        self.assertIsInstance(res, list)
-        self.assertEqual(len(res), len(true_words))
-        prev_pos = 0.0
-        for idx in range(len(true_words)):
-            self.assertIsInstance(res[idx], tuple)
-            self.assertEqual(len(res[idx]), 3)
-            self.assertIsInstance(res[idx][0], str)
-            self.assertIsInstance(res[idx][1], float)
-            self.assertIsInstance(res[idx][2], float)
-            self.assertEqual(res[idx][0], true_words[idx])
-            self.assertGreaterEqual(res[idx][1], prev_pos)
-            self.assertLess(res[idx][1], res[idx][2])
-            prev_pos = res[idx][2]
-        self.assertLessEqual(prev_pos, self.sound.shape[0] / 16000.0)
-        self.assertGreater(prev_pos, 0.5 * (self.sound.shape[0] / 16000.0))
+        self.assertEqual(len(res), 1)
+        self.assertIsInstance(res[0], tuple)
+        self.assertEqual(len(res[0]), 3)
+        self.assertIsInstance(res[0][0], float)
+        self.assertIsInstance(res[0][1], float)
+        self.assertIsInstance(res[0][2], str)
+        self.assertLessEqual(0.0, res[0][0])
+        self.assertLess(res[0][0], res[0][1])
+        self.assertLessEqual(res[0][1], self.sound.shape[0] / TARGET_SAMPLING_FREQUENCY)
+        predicted_words = list(filter(lambda it: it.isalnum(), wordpunct_tokenize(res[0][2].lower())))
+        self.assertEqual(predicted_words, true_words)
 
 
 if __name__ == '__main__':
