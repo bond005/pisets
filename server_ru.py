@@ -21,7 +21,6 @@ app = Flask(__name__)
 
 FRAME_SIZE = 20
 LANGUAGE_NAME = 'ru'
-old_sounds: List[np.ndarray] = []
 
 try:
     segmenter = initialize_model_for_speech_segmentation(LANGUAGE_NAME)
@@ -118,23 +117,14 @@ def transcribe():
     speech_to_srt_logger.info(f'The total duration of the new sound "{file.filename}" is '
                               f'{time_to_str(input_sound.shape[0] / TARGET_SAMPLING_FREQUENCY)}.')
 
-    if len(old_sounds) > 0:
-        input_sound = np.concatenate(old_sounds + [input_sound])
-        speech_to_srt_logger.info(f'The total duration of the united sound is '
-                                  f'{time_to_str(input_sound.shape[0] / TARGET_SAMPLING_FREQUENCY)}.')
-
     output_text = ''
     if input_sound is None:
         speech_to_srt_logger.info(f'The sound "{file.filename}" is empty.')
     else:
         texts_with_timestamps = transcribe_speech(input_sound, segmenter, asr, FRAME_SIZE)
-        for _, _, sentence_text in texts_with_timestamps[:-1]:
+        for _, _, sentence_text in texts_with_timestamps:
             output_text += (' ' + sentence_text)
-        output_text = ' '.join(output_text.split())
-        old_sounds.clear()
-        if len(texts_with_timestamps) > 0:
-            last_segment_start = round(texts_with_timestamps[-1][0] * TARGET_SAMPLING_FREQUENCY)
-            old_sounds.append(input_sound[-last_segment_start:])
+        output_text = ' '.join(output_text.split()).strip()
 
     resp = jsonify(output_text)
     resp.status_code = 200
