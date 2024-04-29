@@ -1,6 +1,7 @@
 import os
 import sys
 import unittest
+import warnings
 
 from nltk import wordpunct_tokenize
 import torch
@@ -29,14 +30,30 @@ class TestEnglishASR(unittest.TestCase):
         else:
             cls.cuda_is_used = False
         cls.sound = load_sound(os.path.join(os.path.dirname(__file__), 'testdata', 'test_sound_en.wav'))
-        cls.segmenter = initialize_model_for_speech_segmentation(
-            'en',
-            'facebook/wav2vec2-base-960h'
-        )
-        cls.recognizer = initialize_model_for_speech_recognition(
-            'en',
-            'openai/whisper-small'
-        )
+        segmenter_name = os.path.join(os.path.dirname(__file__), 'testdata', 'model_en', 'wav2vec2')
+        try:
+            cls.segmenter = initialize_model_for_speech_segmentation(
+                'en',
+                segmenter_name
+            )
+        except Exception as err:
+            warnings.warn(f'The segmenter is not loaded from the "{segmenter_name}": {str(err)}')
+            cls.segmenter = initialize_model_for_speech_segmentation(
+                'en',
+                'facebook/wav2vec2-base-960h'
+            )
+        recognizer_name = os.path.join(os.path.dirname(__file__), 'testdata', 'model_en', 'whisper')
+        try:
+            cls.recognizer = initialize_model_for_speech_recognition(
+                'en',
+                recognizer_name
+            )
+        except Exception as err:
+            warnings.warn(f'The recognizer is not loaded from the "{recognizer_name}": {str(err)}')
+            cls.recognizer = initialize_model_for_speech_recognition(
+                'en',
+                'openai/whisper-medium'
+            )
 
     def test_recognize_pos01(self):
         res = transcribe(

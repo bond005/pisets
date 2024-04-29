@@ -24,6 +24,8 @@ def main():
                         help='The language of input speech (Russian or English).')
     parser.add_argument('-i', '--input', dest='input_name', type=str, required=True,
                         help='The input sound file name or YouTube URL.')
+    parser.add_argument('-m', '--model', dest='model_dir', type=str, required=False, default=None,
+                        help='The path to directory with Wav2Vec2 and Whisper.')
     parser.add_argument('-o', '--output', dest='output_name', type=str, required=True,
                         help='The output SubRip file name.')
     parser.add_argument('-f', '--frame', dest='sound_frame', type=int, default=20, required=False,
@@ -38,6 +40,26 @@ def main():
                   f'Expected an integer greater than 10 and less than 30, got {frame_size}.'
         speech_to_srt_logger.error(err_msg)
         raise IOError(err_msg)
+
+    if args.model_dir is None:
+        wav2vec2_path = None
+        whisper_path = None
+    else:
+        model_dir = os.path.normpath(args.model_dir)
+        if not os.path.isdir(model_dir):
+            err_msg = f'The directory "{model_dir}" does not exist!'
+            speech_to_srt_logger.error(err_msg)
+            raise IOError(err_msg)
+        wav2vec2_path = os.path.join(model_dir, 'wav2vec2')
+        if not os.path.isdir(wav2vec2_path):
+            err_msg = f'The directory "{wav2vec2_path}" does not exist!'
+            speech_to_srt_logger.error(err_msg)
+            raise IOError(err_msg)
+        whisper_path = os.path.join(model_dir, 'whisper')
+        if not os.path.isdir(whisper_path):
+            err_msg = f'The directory "{whisper_path}" does not exist!'
+            speech_to_srt_logger.error(err_msg)
+            raise IOError(err_msg)
 
     audio_fname = os.path.normpath(args.input_name)
     if not os.path.isfile(audio_fname):
@@ -97,7 +119,7 @@ def main():
                                   f'{time_to_str(input_sound.shape[0] / TARGET_SAMPLING_FREQUENCY)}.')
 
         try:
-            segmenter = initialize_model_for_speech_segmentation(language_name)
+            segmenter = initialize_model_for_speech_segmentation(language_name, model_info=wav2vec2_path)
         except BaseException as ex:
             err_msg = str(ex)
             speech_to_srt_logger.error(err_msg)
@@ -105,7 +127,7 @@ def main():
         speech_to_srt_logger.info('The Wav2Vec2-based segmenter is loaded.')
 
         try:
-            asr = initialize_model_for_speech_recognition(language_name)
+            asr = initialize_model_for_speech_recognition(language_name, model_info=whisper_path)
         except BaseException as ex:
             err_msg = str(ex)
             speech_to_srt_logger.error(err_msg)

@@ -88,6 +88,7 @@ def initialize_model_for_speech_recognition(language: str = 'ru', model_info: Op
     except Exception as err:
         asr_logger.error(str(err))
         raise
+    model.config.forced_decoder_ids = config.forced_decoder_ids
     if torch.cuda.is_available():
         model = model.cuda()
     return processor, model, config
