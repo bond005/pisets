@@ -1,5 +1,5 @@
 import logging
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 import math
 from nltk import wordpunct_tokenize
@@ -15,7 +15,102 @@ from wav_io.wav_io import TARGET_SAMPLING_FREQUENCY
 MIN_SOUND_LENGTH: int = 1600
 WHISPER_NUM_BEAMS: int = 5
 MINIBATCH_SIZE: int = 4
+OSCILLATORY_HALLUCINATION_MIN_SIZE: int = 4
 asr_logger = logging.getLogger(__name__)
+
+
+def find_repeated_tokens(tokens: List[str], start_pos: int = 0) -> Union[Tuple[int, int], None]:
+    token_idx = start_pos
+    n_tokens = len(tokens)
+    repeated_group_start = -1
+    repeated_group_end = -1
+    while token_idx < (n_tokens - 1):
+        if tokens[token_idx + 1] == tokens[token_idx]:
+            repeated_group_start = token_idx
+            repeated_group_end = token_idx + 2
+            while repeated_group_end < n_tokens:
+                if tokens[repeated_group_end] != tokens[repeated_group_start]:
+                    break
+                repeated_group_end += 1
+            if (repeated_group_end - repeated_group_start) >= OSCILLATORY_HALLUCINATION_MIN_SIZE:
+                break
+            token_idx += 1
+            repeated_group_start = -1
+            repeated_group_end = -1
+        else:
+            token_idx += 1
+    if (repeated_group_start < 0) or (repeated_group_end < 0):
+        return None
+    return repeated_group_start, repeated_group_end
+
+
+def find_tokens_in_text(source_text: str, tokens: List[str], start_pos: int = 0) -> Tuple[int, int]:
+    if len(tokens) == 0:
+        err_msg = 'The tokens list is empty!'
+        asr_logger.error(err_msg)
+        raise RuntimeError(err_msg)
+    if len(source_text) == 0:
+        err_msg = 'The source text is empty!'
+        asr_logger.error(err_msg)
+        raise RuntimeError(err_msg)
+    source_text_ = source_text.lower()
+    found_idx = source_text_[start_pos:].find(tokens[0])
+    if found_idx < 0:
+        err_msg = f'The token {tokens[0]} does not found in the text {source_text}'
+        asr_logger.error(err_msg)
+        raise RuntimeError(err_msg)
+    token_start_pos = found_idx + start_pos
+    token_end_pos = token_start_pos + len(tokens[0])
+    ok = True
+    if token_start_pos > 0:
+        if source_text_[token_start_pos - 1].isalnum():
+            ok = False
+    if ok:
+        if token_end_pos < len(source_text_):
+            if source_text_[token_end_pos].isalnum():
+                ok = False
+    while not ok:
+        found_idx = source_text_[token_end_pos:].find(tokens[0])
+        if found_idx < 0:
+            err_msg = f'The token {tokens[0]} does not found in the text {source_text}'
+            asr_logger.error(err_msg)
+            raise RuntimeError(err_msg)
+        token_start_pos = found_idx + token_end_pos
+        token_end_pos = token_start_pos + len(tokens[0])
+        ok = True
+        if token_start_pos > 0:
+            if source_text_[token_start_pos - 1].isalnum():
+                ok = False
+        if ok:
+            if token_end_pos < len(source_text_):
+                if source_text_[token_end_pos].isalnum():
+                    ok = False
+    if len(tokens) < 2:
+        return token_start_pos, token_end_pos
+    return token_start_pos, find_tokens_in_text(source_text, tokens[1:], token_end_pos)[1]
+
+
+def remove_oscillatory_hallucinations(input_transcription: str) -> str:
+    tokens = wordpunct_tokenize(input_transcription.lower())
+    tokens_without_punctuation = list(filter(lambda it: it.isalnum(), tokens))
+    if len(tokens_without_punctuation) >= OSCILLATORY_HALLUCINATION_MIN_SIZE:
+        hallucination_bounds = find_repeated_tokens(tokens_without_punctuation)
+        if hallucination_bounds is None:
+            output_transcription = ' '.join(input_transcription.strip().split())
+        else:
+            start_pos, end_pos = find_tokens_in_text(
+                input_transcription,
+                tokens_without_punctuation[hallucination_bounds[0]:hallucination_bounds[1]]
+            )
+            first_token_start, first_token_end = find_tokens_in_text(
+                input_transcription,
+                tokens_without_punctuation[hallucination_bounds[0]:(hallucination_bounds[0] + 1)]
+            )
+            output_transcription = input_transcription[0:first_token_end] + input_transcription[end_pos:]
+            output_transcription = remove_oscillatory_hallucinations(' '.join(output_transcription.strip().split()))
+    else:
+        output_transcription = ' '.join(input_transcription.strip().split())
+    return output_transcription
 
 
 def check_language(lang: str) -> str:
@@ -238,7 +333,7 @@ def recognize_sounds(sounds: List[np.ndarray], processor: WhisperProcessor, mode
         del input_features
         all_transcriptions = processor.batch_decode(generated_ids, skip_special_tokens=True)
         del generated_ids
-    return all_transcriptions
+    return [remove_oscillatory_hallucinations(it) for it in all_transcriptions]
 
 
 def transcribe(mono_sound: np.ndarray, segmenter: Pipeline,
