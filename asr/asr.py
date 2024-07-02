@@ -1,6 +1,7 @@
 import logging
 from typing import List, Optional, Tuple, Union
 
+import asyncio
 import math
 from nltk import wordpunct_tokenize
 import numpy as np
@@ -336,7 +337,7 @@ def recognize_sounds(sounds: List[np.ndarray], processor: WhisperProcessor, mode
     return [remove_oscillatory_hallucinations(it) for it in all_transcriptions]
 
 
-def transcribe(mono_sound: np.ndarray, segmenter: Pipeline,
+async def transcribe(mono_sound: np.ndarray, segmenter: Pipeline,
                asr: Tuple[WhisperProcessor, WhisperForConditionalGeneration, GenerationConfig],
                max_segment_size: int) -> List[Tuple[float, float, str]]:
     speech_segments = segmentate_sound(mono_sound, segmenter, max_segment_size)
