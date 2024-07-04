@@ -1,7 +1,7 @@
+import gc
 import logging
 from typing import List, Optional, Tuple, Union
 
-import asyncio
 import math
 from nltk import wordpunct_tokenize
 import numpy as np
@@ -140,7 +140,7 @@ def initialize_model_for_speech_segmentation(language: str = 'ru', model_info: O
             segmenter = pipeline(
                 'automatic-speech-recognition', model=model_name,
                 chunk_length_s=10, stride_length_s=(4, 2),
-                device='cuda:0'
+                device='cuda:0', model_kwargs={'attn_implementation': 'sdpa'}
             )
         else:
             segmenter = pipeline(
@@ -180,13 +180,16 @@ def initialize_model_for_speech_recognition(language: str = 'ru', model_info: Op
         task='transcribe'
     )
     try:
-        model = WhisperForConditionalGeneration.from_pretrained(model_name, torch_dtype=torch.float16)
+        model = WhisperForConditionalGeneration.from_pretrained(
+            model_name,
+            torch_dtype=torch.float16,
+            attn_implementation='sdpa',
+            device_map='auto'
+        )
     except Exception as err:
         asr_logger.error(str(err))
         raise
     model.config.forced_decoder_ids = config.forced_decoder_ids
-    if torch.cuda.is_available():
-        model = model.cuda()
     return processor, model, config
 
 
@@ -263,6 +266,9 @@ def segmentate_sound(mono_sound: np.ndarray, segmenter: Pipeline,
         raise ValueError(err_msg)
 
     output = segmenter(mono_sound, return_timestamps='word')
+    gc.collect()
+    torch.cuda.empty_cache()
+
     word_bounds = [(float(it['timestamp'][0]), float(it['timestamp'][1])) for it in output['chunks']]
     if len(word_bounds) < 1:
         return []
@@ -334,10 +340,12 @@ def recognize_sounds(sounds: List[np.ndarray], processor: WhisperProcessor, mode
         del input_features
         all_transcriptions = processor.batch_decode(generated_ids, skip_special_tokens=True)
         del generated_ids
+    gc.collect()
+    torch.cuda.empty_cache()
     return [remove_oscillatory_hallucinations(it) for it in all_transcriptions]
 
 
-async def transcribe(mono_sound: np.ndarray, segmenter: Pipeline,
+def transcribe(mono_sound: np.ndarray, segmenter: Pipeline,
                asr: Tuple[WhisperProcessor, WhisperForConditionalGeneration, GenerationConfig],
                max_segment_size: int) -> List[Tuple[float, float, str]]:
     speech_segments = segmentate_sound(mono_sound, segmenter, max_segment_size)
@@ -374,3 +382,9 @@ async def transcribe(mono_sound: np.ndarray, segmenter: Pipeline,
         )
     ))
     return results
+
+
+async def async_transcribe(mono_sound: np.ndarray, segmenter: Pipeline,
+                           asr: Tuple[WhisperProcessor, WhisperForConditionalGeneration, GenerationConfig],
+                           max_segment_size: int) -> List[Tuple[float, float, str]]:
+    return transcribe(mono_sound, segmenter, asr, max_segment_size)

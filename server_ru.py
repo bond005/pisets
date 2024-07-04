@@ -12,7 +12,7 @@ from wav_io.wav_io import transform_to_wavpcm, load_sound
 from wav_io.wav_io import TARGET_SAMPLING_FREQUENCY
 from asr.asr import initialize_model_for_speech_recognition
 from asr.asr import initialize_model_for_speech_segmentation
-from asr.asr import transcribe as transcribe_speech
+from asr.asr import async_transcribe as transcribe_speech
 from utils.utils import time_to_str
 
 from docx import Document
