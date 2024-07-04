@@ -324,7 +324,8 @@ def recognize_sounds(sounds: List[np.ndarray], processor: WhisperProcessor, mode
             input_features = inputs.input_features
             del inputs
             with torch.no_grad():
-                generated_ids = model.generate(inputs=input_features.to(model.device).half(), generation_config=config)
+                generated_ids = model.generate(input_features=input_features.to(model.device).half(),
+                                               generation_config=config)
             del input_features
             transcriptions = processor.batch_decode(generated_ids, skip_special_tokens=True)
             del generated_ids
@@ -336,7 +337,8 @@ def recognize_sounds(sounds: List[np.ndarray], processor: WhisperProcessor, mode
         input_features = inputs.input_features
         del inputs
         with torch.no_grad():
-            generated_ids = model.generate(inputs=input_features.to(model.device).half(), generation_config=config)
+            generated_ids = model.generate(input_features=input_features.to(model.device).half(),
+                                           generation_config=config)
         del input_features
         all_transcriptions = processor.batch_decode(generated_ids, skip_special_tokens=True)
         del generated_ids
@@ -382,9 +384,3 @@ def transcribe(mono_sound: np.ndarray, segmenter: Pipeline,
         )
     ))
     return results
-
-
-async def async_transcribe(mono_sound: np.ndarray, segmenter: Pipeline,
-                           asr: Tuple[WhisperProcessor, WhisperForConditionalGeneration, GenerationConfig],
-                           max_segment_size: int) -> List[Tuple[float, float, str]]:
-    return transcribe(mono_sound, segmenter, asr, max_segment_size)

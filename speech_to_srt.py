@@ -23,7 +23,7 @@ def main():
     parser.add_argument('--lang', dest='language', type=str, required=False, default='ru',
                         help='The language of input speech (Russian or English).')
     parser.add_argument('-i', '--input', dest='input_name', type=str, required=True,
-                        help='The input sound file name or YouTube URL.')
+                        help='The input sound file name.')
     parser.add_argument('-m', '--model', dest='model_dir', type=str, required=False, default=None,
                         help='The path to directory with Wav2Vec2 and Whisper.')
     parser.add_argument('-o', '--output', dest='output_name', type=str, required=True,

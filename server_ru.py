@@ -1,7 +1,6 @@
 import logging
 import os
 import tempfile
-from typing import List
 
 from flask import Flask, request, jsonify, send_file
 import numpy as np
@@ -12,7 +11,7 @@ from wav_io.wav_io import transform_to_wavpcm, load_sound
 from wav_io.wav_io import TARGET_SAMPLING_FREQUENCY
 from asr.asr import initialize_model_for_speech_recognition
 from asr.asr import initialize_model_for_speech_segmentation
-from asr.asr import async_transcribe as transcribe_speech
+from asr.asr import transcribe as transcribe_speech
 from utils.utils import time_to_str
 
 from docx import Document
@@ -22,7 +21,7 @@ logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s',
                     level=logging.INFO)
 app = Flask(__name__)
 
-RESULTS_FOLDER = "results"
+RESULTS_FOLDER = 'results'
 os.makedirs(RESULTS_FOLDER, exist_ok=True)
 
 task_status = {}
@@ -115,11 +114,11 @@ async def transcribe():
         if len(err_msg) == 0:
             err_msg = 'Audio file is empty.'
             speech_to_srt_logger.error('400: ' + err_msg)
-            task_status[task_id]["message"] = err_msg
+            task_status[task_id]['message'] = err_msg
         else:
-            task_status[task_id]["message"] = err_msg
-        task_status[task_id]["status"] = "Error"
-        task_status[task_id]["status_code"] = 400
+            task_status[task_id]['message'] = err_msg
+        task_status[task_id]['status'] = 'Error'
+        task_status[task_id]['status_code'] = 400
         return jsonify(task_status[task_id])
 
     if not isinstance(input_sound, np.ndarray):
@@ -132,39 +131,39 @@ async def transcribe():
         speech_to_srt_logger.info(f'The sound "{file.filename}" is empty.')
     else:
         speech_to_srt_logger.error(task_id)
-        asyncio.create_task(create_result_file(input_sound, segmenter, asr, FRAME_SIZE, task_id))
+        await asyncio.create_task(create_result_file(input_sound, segmenter, asr, FRAME_SIZE, task_id))
 
-    return jsonify({"task_id": task_id})
+    return jsonify({'task_id': task_id})
 
 
 async def create_result_file(input_sound, segmenter, asr, FRAME_SIZE, task_id):
-    texts_with_timestamps = await transcribe_speech(input_sound, segmenter, asr, FRAME_SIZE)
-    output_filename = task_id + ".docx"
+    texts_with_timestamps = transcribe_speech(input_sound, segmenter, asr, FRAME_SIZE)
+    output_filename = task_id + '.docx'
     doc = Document()
     for start_time, end_time, sentence_text in texts_with_timestamps:
-        line = f"{start_time:.2f} - {end_time:.2f} - {sentence_text}"
+        line = f'{start_time:.2f} - {end_time:.2f} - {sentence_text}'
         doc.add_paragraph(line)
-        doc.add_paragraph("")
+        doc.add_paragraph('')
 
     result_path = os.path.join(RESULTS_FOLDER, output_filename)
     doc.save(result_path)
 
-    task_status[task_id] = jsonify({"status": "Ready", "status_code": 200, "result_path": result_path})
+    task_status[task_id] = jsonify({'status': 'Ready', 'status_code': 200, 'result_path': result_path})
 
 
-@app.route("/status/<task_id>", methods=["GET"])
+@app.route('/status/<task_id>', methods=['GET'])
 def get_status(task_id):
     status = task_status.get(task_id, None)
     if status is None:
-        return jsonify({"error": "Task not found"}), 404
+        return jsonify({'error': 'Task not found'}), 404
     return status
 
 
-@app.route("/download_result/<task_id>", methods=["GET"])
+@app.route('/download_result/<task_id>', methods=['GET'])
 def download_result(task_id):
-    result_file = f"results/{task_id}.docx"
+    result_file = f'{RESULTS_FOLDER}/{task_id}.docx'
     if not os.path.isfile(result_file):
-        return jsonify({"error": "Result not ready or task not found"}), 404
+        return jsonify({'error': 'Result not ready or task not found'}), 404
 
     return send_file(result_file, as_attachment=True)
 
