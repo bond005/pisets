@@ -2,7 +2,7 @@ FROM pytorch/pytorch:2.3.1-cuda11.8-cudnn8-runtime
 MAINTAINER Ivan Bondarenko <i.bondarenko@g.nsu.ru>
 
 ENV TZ=UTC
-RUN sudo ln -snf /usr/share/zoneinfo/$TZ /etc/localtime
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime
 
 RUN apt-get update
 
@@ -14,7 +14,6 @@ RUN apt-get install -y apt-utils && \
     apt-get install -y apt-transport-https && \
     apt-get install -y build-essential && \
     apt-get install -y git g++ autoconf-archive libtool && \
-    apt-get install -y python-setuptools python-dev && \
     apt-get install -y python3-setuptools python3-dev && \
     apt-get install -y cmake-data && \
     apt-get install -y vim && \
