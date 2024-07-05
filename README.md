@@ -11,16 +11,16 @@ The "**pisets**" is Russian word (in Cyrillic, "писец") for denoting a pers
 
 ## Installation
 
-This project uses a deep learning, therefore a key dependency is a deep learning framework. I prefer [PyTorch](https://pytorch.org/), and you need to install CPU- or GPU-based build of PyTorch ver. 2.0 or later. You can see more detailed description of dependencies in the `requirements.txt`.
+This project uses a deep learning, therefore a key dependency is a deep learning framework. I prefer [PyTorch](https://pytorch.org/), and you need to install CPU- or GPU-based build of PyTorch ver. 2.3 or later. You can see more detailed description of dependencies in the `requirements.txt`.
 
 Other important dependencies are:
 
-- [KenLM](https://github.com/kpu/kenlm): a statistical N-gram language model inference code;
+- [Transformers](https://github.com/huggingface/transformers): a Python library for building neural networks with Transformer architecture;
 - [FFmpeg](https://ffmpeg.org): a software for handling video, audio, and other multimedia files.
 
-These dependencies are not only "pythonic". Firstly, you have to build the KenLM C++ library from sources accordingly this recommendation: https://github.com/kpu/kenlm#compiling (it is easy for any Linux user, but it can be a problem for Windows users, because KenLM is not fully cross-platform). Secondly, you have to install FFmpeg in your system  as described in the instructions https://ffmpeg.org/download.html.
+The first dependency is a well-known Python library, but the second dependency is not only "pythonic". You have to install FFmpeg in your system  as described in the instructions https://ffmpeg.org/download.html.
 
-Also, for installation you need to Python 3.9 or later. I recommend using a new [Python virtual environment](https://docs.python.org/3/glossary.html#term-virtual-environment) witch can be created with [Anaconda](https://www.anaconda.com) or [venv](https://docs.python.org/3/library/venv.html#module-venv). To install this project in the selected virtual environment, you should activate this environment and run the following commands in the Terminal:
+Also, for installation you need to Python 3.10 or later. I recommend using a new [Python virtual environment](https://docs.python.org/3/glossary.html#term-virtual-environment) witch can be created with [Anaconda](https://www.anaconda.com). To install this project in the selected virtual environment, you should activate this environment and run the following commands in the Terminal:
 
 ```shell
 git clone https://github.com/bond005/pisets.git
@@ -44,8 +44,8 @@ Usage of the **Pisets** is very simple. You have to write the following command 
 python speech_to_srt.py \
     -i /path/to/your/sound/or/video.m4a \
     -o /path/to/resulted/transcription.srt \
+    -m /path/to/local/directory/with/models \
     -lang ru \
-    -r \
     -f 50
 ```
 
@@ -68,39 +68,33 @@ Installation of the **Pisets** can be difficult, especially for Windows users (i
 You can build the docker container youself:
 
 ```shell
-docker build -t bond005/pisets:0.1 .
+docker build -t bond005/pisets:0.2 .
 ```
 
 But the easiest way is to download the built image from Docker-Hub:
 
 ```shell
-docker pull bond005/pisets:0.1
+docker pull bond005/pisets:0.2
 ```
 
 After building (or pulling) you have to run this docker container:
 
 ```shell
-docker run -p 127.0.0.1:8040:8040 pisets:0.1
+docker run --rm --gpus all -p 127.0.0.1:8040:8040 bond005/pisets:0.2
 ```
 
-Hurray! The docker container is ready for use, and the **Pisets** will transcribe your speech. You can use the Python client for the **Pisets** service in the script [client_ru_demo.py](https://github.com/bond005/pisets/blob/main/client_ru_demo.py):
+Hurray! The docker container is ready for use on GPU, and the **Pisets** will transcribe your speech. You can use the Python client for the **Pisets** service in the script [client_ru_demo.py](https://github.com/bond005/pisets/blob/main/client_ru_demo.py):
 
 ```shell
 python client_ru_demo.py \
     -i /path/to/your/sound/or/video.m4a \
-    -o /path/to/resulted/transcription.srt
-```
-
-But the easiest way is to use a special virtual machine with the **Pisets** in Yandex Cloud. This is an example [curl](https://curl.se/) for transcribing your speech with the **Pisets** in the Unix-like OS:
-
-```shell
-echo -e $(curl -X POST 178.154.244.147:8040/transcribe -F "audio=@/path/to/your/sound/or/video.m4a" | awk '{ print substr( $0, 2, length($0)-2 ) }') > /path/to/resulted/transcription.srt
+    -o /path/to/resulted/transcription.docx
 ```
 
 #### Important notes
 1. The **Pisets** in the abovementioned docker container currently supports only Russian. If you want to transcribe English speech, then you have use the command-line tool `speech_to_srt.py`.
 
-2. This docker container, unlike the command-line tool, does not support GPU.
+2. The docker container and the command-line tool support CPU, but the execution of Pisets on CPU-based machine is very long. I recommend using only a GPU with at least 16 GB of memory.
 
 ## Models and algorithms
 
