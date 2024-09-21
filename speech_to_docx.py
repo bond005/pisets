@@ -146,7 +146,7 @@ def main():
 
     doc = Document()
     for start_time, end_time, sentence_text in texts_with_timestamps:
-        line = f'{start_time:.2f} - {end_time:.2f} - {sentence_text}'
+        line = f'{time_to_str(start_time)} - {time_to_str(end_time)} - {sentence_text}'
         doc.add_paragraph(line)
         doc.add_paragraph('')
     doc.save(output_docx_fname)
