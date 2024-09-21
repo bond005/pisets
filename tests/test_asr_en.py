@@ -4,10 +4,12 @@ import unittest
 import warnings
 
 from nltk import wordpunct_tokenize
+import numpy as np
 import torch
 
 try:
     from asr.asr import initialize_model_for_speech_recognition
+    from asr.asr import initialize_model_for_speech_classification
     from asr.asr import initialize_model_for_speech_segmentation
     from asr.asr import transcribe
     from asr.asr import TARGET_SAMPLING_FREQUENCY
@@ -15,6 +17,7 @@ try:
 except:
     sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
     from asr.asr import initialize_model_for_speech_recognition
+    from asr.asr import initialize_model_for_speech_classification
     from asr.asr import initialize_model_for_speech_segmentation
     from asr.asr import transcribe
     from asr.asr import TARGET_SAMPLING_FREQUENCY
@@ -30,6 +33,7 @@ class TestEnglishASR(unittest.TestCase):
         else:
             cls.cuda_is_used = False
         cls.sound = load_sound(os.path.join(os.path.dirname(__file__), 'testdata', 'test_sound_en.wav'))
+        cls.sound_without_speech = load_sound(os.path.join(os.path.dirname(__file__), 'testdata', 'test_silence.wav'))
         segmenter_name = os.path.join(os.path.dirname(__file__), 'testdata', 'model_en', 'wav2vec2')
         try:
             cls.segmenter = initialize_model_for_speech_segmentation(
@@ -42,6 +46,14 @@ class TestEnglishASR(unittest.TestCase):
                 'en',
                 'facebook/wav2vec2-base-960h'
             )
+        vad_name = os.path.join(os.path.dirname(__file__), 'testdata', 'model_en', 'ast')
+        try:
+            cls.vad = initialize_model_for_speech_classification(
+                vad_name
+            )
+        except Exception as err:
+            warnings.warn(f'The voice activity detector is not loaded from the "{vad_name}": {str(err)}')
+            cls.vad = initialize_model_for_speech_classification()
         recognizer_name = os.path.join(os.path.dirname(__file__), 'testdata', 'model_en', 'whisper')
         try:
             cls.recognizer = initialize_model_for_speech_recognition(
@@ -59,7 +71,9 @@ class TestEnglishASR(unittest.TestCase):
         res = transcribe(
             mono_sound=self.sound,
             segmenter=self.segmenter,
+            voice_activity_detector=self.vad,
             asr=self.recognizer,
+            min_segment_size=1,
             max_segment_size=5
         )
         true_words = ['neural', 'networks', 'are', 'good']
@@ -75,6 +89,30 @@ class TestEnglishASR(unittest.TestCase):
         self.assertLessEqual(res[0][1], self.sound.shape[0] / TARGET_SAMPLING_FREQUENCY)
         predicted_words = list(filter(lambda it: it.isalnum(), wordpunct_tokenize(res[0][2].lower())))
         self.assertEqual(predicted_words, true_words)
+
+    def test_recognize_pos02(self):
+        res = transcribe(
+            mono_sound=self.sound_without_speech,
+            segmenter=self.segmenter,
+            voice_activity_detector=self.vad,
+            asr=self.recognizer,
+            min_segment_size=1,
+            max_segment_size=5
+        )
+        self.assertIsInstance(res, list)
+        self.assertEqual(len(res), 0)
+
+    def test_recognize_pos03(self):
+        res = transcribe(
+            mono_sound=np.zeros((160_000,), dtype=np.float32),
+            segmenter=self.segmenter,
+            voice_activity_detector=self.vad,
+            asr=self.recognizer,
+            min_segment_size=1,
+            max_segment_size=5
+        )
+        self.assertIsInstance(res, list)
+        self.assertEqual(len(res), 0)
 
 
 if __name__ == '__main__':

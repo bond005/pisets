@@ -5,6 +5,7 @@ import os
 import sys
 import tempfile
 
+from docx import Document
 import numpy as np
 
 from wav_io.wav_io import transform_to_wavpcm, load_sound
@@ -29,7 +30,7 @@ def main():
     parser.add_argument('-m', '--model', dest='model_dir', type=str, required=False, default=None,
                         help='The path to directory with Wav2Vec2, AudioTransformer and Whisper.')
     parser.add_argument('-o', '--output', dest='output_name', type=str, required=True,
-                        help='The output SubRip file name.')
+                        help='The output DocX file name.')
     args = parser.parse_args()
 
     language_name = check_language(args.language)
@@ -66,21 +67,21 @@ def main():
         speech_to_srt_logger.error(err_msg)
         raise IOError(err_msg)
 
-    output_srt_fname = os.path.normpath(args.output_name)
-    output_srt_dir = os.path.dirname(output_srt_fname)
-    if len(output_srt_dir) > 0:
-        if not os.path.isdir(output_srt_dir):
-            err_msg = f'The directory "{output_srt_dir}" does not exist!'
+    output_docx_fname = os.path.normpath(args.output_name)
+    output_docx_dir = os.path.dirname(output_docx_fname)
+    if len(output_docx_dir) > 0:
+        if not os.path.isdir(output_docx_dir):
+            err_msg = f'The directory "{output_docx_dir}" does not exist!'
             speech_to_srt_logger.error(err_msg)
             raise IOError(err_msg)
-    if len(os.path.basename(output_srt_fname).strip()) == 0:
-        err_msg = f'The file name "{output_srt_fname}" is incorrect!'
+    if len(os.path.basename(output_docx_fname).strip()) == 0:
+        err_msg = f'The file name "{output_docx_fname}" is incorrect!'
         speech_to_srt_logger.error(err_msg)
         raise IOError(err_msg)
 
-    if os.path.basename(output_srt_fname) == os.path.basename(audio_fname):
-        err_msg = f'The input audio and the output SubRip file have a same names! ' \
-                  f'{os.path.basename(audio_fname)} = {os.path.basename(output_srt_fname)}'
+    if os.path.basename(output_docx_fname) == os.path.basename(audio_fname):
+        err_msg = f'The input audio and the output DocX file have a same names! ' \
+                  f'{os.path.basename(audio_fname)} = {os.path.basename(output_docx_fname)}'
         speech_to_srt_logger.error(err_msg)
         raise IOError(err_msg)
 
@@ -143,11 +144,12 @@ def main():
 
         texts_with_timestamps = transcribe(input_sound, segmenter, vad, asr, min_segment_size=1, max_segment_size=20)
 
-    with codecs.open(output_srt_fname, mode='w', encoding='utf-8') as fp:
-        for counter, (sent_start, sent_end, sentence_text) in enumerate(texts_with_timestamps):
-            fp.write(f'{counter + 1}\n')
-            fp.write(f'{time_to_str(sent_start)} --> {time_to_str(sent_end)}\n')
-            fp.write(f'{sentence_text}\n\n')
+    doc = Document()
+    for start_time, end_time, sentence_text in texts_with_timestamps:
+        line = f'{start_time:.2f} - {end_time:.2f} - {sentence_text}'
+        doc.add_paragraph(line)
+        doc.add_paragraph('')
+    doc.save(output_docx_fname)
 
 
 if __name__ == '__main__':
@@ -160,7 +162,7 @@ if __name__ == '__main__':
     stdout_handler.setFormatter(formatter)
     speech_to_srt_logger.addHandler(stdout_handler)
     asr_logger.addHandler(stdout_handler)
-    file_handler = logging.FileHandler('speech_to_srt.log')
+    file_handler = logging.FileHandler('speech_to_docx.log')
     file_handler.setFormatter(formatter)
     speech_to_srt_logger.addHandler(file_handler)
     asr_logger.addHandler(file_handler)

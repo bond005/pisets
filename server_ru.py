@@ -10,6 +10,7 @@ import asyncio
 from wav_io.wav_io import transform_to_wavpcm, load_sound
 from wav_io.wav_io import TARGET_SAMPLING_FREQUENCY
 from asr.asr import initialize_model_for_speech_recognition
+from asr.asr import initialize_model_for_speech_classification
 from asr.asr import initialize_model_for_speech_segmentation
 from asr.asr import transcribe as transcribe_speech
 from utils.utils import time_to_str
@@ -26,7 +27,8 @@ os.makedirs(RESULTS_FOLDER, exist_ok=True)
 
 task_status = {}
 
-FRAME_SIZE = 20
+MAX_FRAME_SIZE = 20
+MIN_FRAME_SIZE = 1
 LANGUAGE_NAME = 'ru'
 
 try:
@@ -36,6 +38,14 @@ except BaseException as ex:
     speech_to_srt_logger.error(err_msg)
     raise
 speech_to_srt_logger.info('The Wav2Vec2-based segmenter is loaded.')
+
+try:
+    vad = initialize_model_for_speech_classification()
+except BaseException as ex:
+    err_msg = str(ex)
+    speech_to_srt_logger.error(err_msg)
+    raise
+speech_to_srt_logger.info('The AST-based voice activity detector is loaded.')
 
 try:
     asr = initialize_model_for_speech_recognition(LANGUAGE_NAME)
@@ -131,13 +141,13 @@ async def transcribe():
         speech_to_srt_logger.info(f'The sound "{file.filename}" is empty.')
     else:
         speech_to_srt_logger.error(task_id)
-        await asyncio.create_task(create_result_file(input_sound, segmenter, asr, FRAME_SIZE, task_id))
+        await asyncio.create_task(create_result_file(input_sound, segmenter, vad, asr, task_id))
 
     return jsonify({'task_id': task_id})
 
 
-async def create_result_file(input_sound, segmenter, asr, FRAME_SIZE, task_id):
-    texts_with_timestamps = transcribe_speech(input_sound, segmenter, asr, FRAME_SIZE)
+async def create_result_file(input_sound, segmenter, vad, asr, task_id):
+    texts_with_timestamps = transcribe_speech(input_sound, segmenter, vad, asr, MIN_FRAME_SIZE, MAX_FRAME_SIZE)
     output_filename = task_id + '.docx'
     doc = Document()
     for start_time, end_time, sentence_text in texts_with_timestamps:

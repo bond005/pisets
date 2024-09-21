@@ -45,21 +45,42 @@ python speech_to_srt.py \
     -i /path/to/your/sound/or/video.m4a \
     -o /path/to/resulted/transcription.srt \
     -m /path/to/local/directory/with/models \
-    -lang ru \
-    -f 50
+    -lang ru
 ```
 
 The **1st** argument `-i` specifies the name of the source audio or video in any format supported by FFmpeg. 
 
 The **2st** argument `-o` specifies the name of the resulting SubRip file into which the recognized transcription will be written.
 
-Other arguments are not required. If you do not specify them, then their default values will be used. But I think, that their description matters for any user. So, `-lang` specifies the used language. You can select Russian (*ru*, *rus*, *russian*) or English (*en*, *eng*, *english*). The default language is Russian.
+Other arguments are not required. If you do not specify them, then their default values will be used. But I think, that their description matters for any user. So, `-lang` specifies the used language. You can select Russian (*ru*, *rus*, *russian*) or English (*en*, *eng*, *english*). The default language is Russian. Yet another argument `-m` points to the directory with all needed pre-downloaded models. This directory must include several subdirectories, which contain localized models for corresponding languages (`ru` or `en` is supported now). In turn, each language subdirectory includes three more subdirectories corresponding to the three models used:
 
-`-r` indicates the need for a more smart rescoring of speech hypothesis with a large language model as like as T5. This option is possible for Russian only, but it is important for good quality of generated transcription. Thus, I highly recommend using the option `-r` if you want to transcribe a Russian speech signal.
+1) `wav2vec2` (for preliminary speech recognition and segmentation into speech frames);
+2) `ast` (for filtering non-speech segments);
+3) `whisper` (for final speech recognition).
 
-`-f` sets the maximum duration of the sound frame (in seconds). The fact is that the **Pisets** is designed so that a very long audio signal is divided into smaller sound frames, then these frames are recognized independently, and the recognition results are glued together into a single transcription. The need for such a procedure is due to the architecture of the acoustic neural network. And this argument determines the maximum duration of such frame, as defined above. The default value is 50 seconds, and I don't recommend changing it.
+If you don't specify the argument `-m`, then all needed models will be automatically downloaded from Huggingface hub:
 
-If your computer has CUDA-compatible GPU, and your PyTorch has been correctly installed for this GPU, then the **Pisets** will transcribe your speech very quickly. So, the real-time factor (xRT), defined as the ratio between the time it takes to process the input and the duration of the input, is approximately 0.15 - 0.25 (it depends on the concrete GPU type). But if you use CPU only, then the **Pisets** will calculate your speech transcription significantly slower (xRT is approximately 1.0 - 1.5).  
+- for Russian:
+  1) [bond005/Wav2Vec2-Large-Ru-Golos](https://huggingface.co/bond005/wav2vec2-large-ru-golos),
+  2) [MIT/ast-finetuned-audioset-10-10-0.4593](https://huggingface.co/MIT/ast-finetuned-audioset-10-10-0.4593),
+  3) [bond005/whisper-large-v3-ru-podlodka](https://huggingface.co/bond005/whisper-large-v3-ru-podlodka);
+
+- for English:
+  1) [jonatasgrosman/wav2vec2-large-xlsr-53-english](https://huggingface.co/jonatasgrosman/wav2vec2-large-xlsr-53-english),
+  2) [MIT/ast-finetuned-audioset-10-10-0.4593](https://huggingface.co/MIT/ast-finetuned-audioset-10-10-0.4593),
+  3) [openai/whisper-large-v3](https://huggingface.co/openai/whisper-large-v3).
+
+Also, you can generate the transcription of your audio-record as a DocX file:
+
+```shell
+python speech_to_docx.py \
+    -i /path/to/your/sound/or/video.m4a \
+    -o /path/to/resulted/transcription.docx \
+    -m /path/to/local/directory/with/models \
+    -lang ru
+```
+
+If your computer has CUDA-compatible GPU, and your PyTorch has been correctly installed for this GPU, then the **Pisets** will transcribe your speech very quickly. So, the real-time factor (xRT), defined as the ratio between the time it takes to process the input and the duration of the input, is approximately 0.15 - 0.25 (it depends on the concrete GPU type). But if you use CPU only, then the **Pisets** will calculate your speech transcription significantly slower (xRT is approximately 1.0 - 1.5).
 
 ### Docker and REST-API
 
@@ -92,35 +113,25 @@ python client_ru_demo.py \
 ```
 
 #### Important notes
-1. The **Pisets** in the abovementioned docker container currently supports only Russian. If you want to transcribe English speech, then you have use the command-line tool `speech_to_srt.py`.
+The **Pisets** in the abovementioned docker container currently supports only Russian. If you want to transcribe English speech, then you have to use the command-line tool `speech_to_srt.py` or `speech_to_docx.py`.
 
-2. The docker container and the command-line tool support CPU, but the execution of Pisets on CPU-based machine is very long. I recommend using only a GPU with at least 16 GB of memory.
+### Cloud computing
 
-## Models and algorithms
+You can open your [personal account](https://lk.sibnn.ai/login?redirect=/) (in Russian) on the [SibNN.AI](https://sibnn.ai/) and upload your audio recordings of any size for their automatic recognition.
 
-The **Pisets** transcribes speech signal in four steps:
-
-1. The acoustic deep neural network, based on fine-tuned [Wav2Vec2](https://arxiv.org/abs/2006.11477), performs the primary recognition of the speech signal and calculates the probabilities of the recognized letters. So the result of the first step is a probability matrix.
-2. The statistical N-gram language model translates the probability matrix into recognized text using a CTC beam search decoder.
-3. The language deep neural network, based on fine-tuned [T5](https://arxiv.org/abs/2010.11934), corrects possible errors and generates the final recognition text in a "pure" form (without punctuations, only in lowercase, and so on). 
-4. The last component of the "Pisets" places punctuation marks and capital letters.
-
-The first and the second steps for English speech are implemented with Patrick von Platen's [Wav2Vec2-Base-960h + 4-gram](https://huggingface.co/patrickvonplaten/wav2vec2-large-960h-lv60-self-4-gram), and Russian speech transcribing is based on my [Wav2Vec2-Large-Ru-Golos-With-LM](https://huggingface.co/bond005/wav2vec2-large-ru-golos-with-lm).
-
-The third step is not supported for English speech, but it is based on my [ruT5-ASR](https://huggingface.co/bond005/ruT5-ASR) for Russian speech.
-
-The fourth step is realized on basis of [the multilingual text enhancement model created by Silero](https://github.com/snakers4/silero-models#text-enhancement).
-
-My tests show a strong superiority of the recognition system based on the given scheme over Whisper Medium, and a significant superiority over Whisper Large when transcribing Russian speech. The methodology and test results are open:
-
-- Wav2Vec2 + 3-gram LM + T5-ASR for Russian: https://www.kaggle.com/code/bond005/wav2vec2-ru-lm-t5-eval
-- Whisper Medium for Russian: https://www.kaggle.com/code/bond005/whisper-medium-ru-eval
-
-Also, you can see the independent evaluation of my [ Wav2Vec2-Large-Ru-Golos-With-LM](https://huggingface.co/bond005/wav2vec2-large-ru-golos-with-lm) model (without T5-based rescorer) on various Russian speech corpora in comparison with other open Russian speech recognition models: https://alphacephei.com/nsh/2023/01/22/russian-models.html (in Russian). 
+In addition, you can try the demo of the cloud **Pisets** without registration on the web-page https://pisets.dialoger.tech (the demo without registration contains a limit on the maximum length of an audio recording of no more than 5 minutes, but allows you to record a signal from a microphone).
 
 ## Contact
 
 Ivan Bondarenko - [@Bond_005](https://t.me/Bond_005) - [bond005@yandex.ru](mailto:bond005@yandex.ru)
+
+## Acknowledgment
+
+This project was developed as part of a more fundamental project to create an open source system for automatic transcription and semantic analysis of audio recordings of interviews  in Russian. Many journalists, sociologist and other specialists need to prepare the interview manually, and automatization can help their.
+
+The [Foundation for Assistance to Small Innovative Enterprises](https://fasie.ru) which is Russian governmental non-profit organization supports an unique program to build free and open-source artificial intelligence systems. This programs is known as "Code - Artificial Intelligence" (see https://fasie.ru/press/fund/kod-ai/?sphrase_id=114059 in Russian). The abovementioned project was started within the first stage of the "Code - Artificial Intelligence" program. You can see the first-stage winners list on this web-page: https://fasie.ru/competitions/kod-ai-results (in Russian).
+
+Therefore, I thank The Foundation for Assistance to Small Innovative Enterprises for this support.
 
 ## License
 
