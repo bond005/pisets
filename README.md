@@ -11,16 +11,16 @@ The "**pisets**" is Russian word (in Cyrillic, "писец") for denoting a pers
 
 ## Installation
 
-This project uses a deep learning, therefore a key dependency is a deep learning framework. I prefer [PyTorch](https://pytorch.org/), and you need to install CPU- or GPU-based build of PyTorch ver. 2.0 or later. You can see more detailed description of dependencies in the `requirements.txt`.
+This project uses a deep learning, therefore a key dependency is a deep learning framework. I prefer [PyTorch](https://pytorch.org/), and you need to install CPU- or GPU-based build of PyTorch ver. 2.3 or later. You can see more detailed description of dependencies in the `requirements.txt`.
 
 Other important dependencies are:
 
-- [KenLM](https://github.com/kpu/kenlm): a statistical N-gram language model inference code;
+- [Transformers](https://github.com/huggingface/transformers): a Python library for building neural networks with Transformer architecture;
 - [FFmpeg](https://ffmpeg.org): a software for handling video, audio, and other multimedia files.
 
-These dependencies are not only "pythonic". Firstly, you have to build the KenLM C++ library from sources accordingly this recommendation: https://github.com/kpu/kenlm#compiling (it is easy for any Linux user, but it can be a problem for Windows users, because KenLM is not fully cross-platform). Secondly, you have to install FFmpeg in your system  as described in the instructions https://ffmpeg.org/download.html.
+The first dependency is a well-known Python library, but the second dependency is not only "pythonic". You have to install FFmpeg in your system  as described in the instructions https://ffmpeg.org/download.html.
 
-Also, for installation you need to Python 3.9 or later. I recommend using a new [Python virtual environment](https://docs.python.org/3/glossary.html#term-virtual-environment) witch can be created with [Anaconda](https://www.anaconda.com) or [venv](https://docs.python.org/3/library/venv.html#module-venv). To install this project in the selected virtual environment, you should activate this environment and run the following commands in the Terminal:
+Also, for installation you need to Python 3.10 or later. I recommend using a new [Python virtual environment](https://docs.python.org/3/glossary.html#term-virtual-environment) witch can be created with [Anaconda](https://www.anaconda.com). To install this project in the selected virtual environment, you should activate this environment and run the following commands in the Terminal:
 
 ```shell
 git clone https://github.com/bond005/pisets.git
@@ -44,22 +44,43 @@ Usage of the **Pisets** is very simple. You have to write the following command 
 python speech_to_srt.py \
     -i /path/to/your/sound/or/video.m4a \
     -o /path/to/resulted/transcription.srt \
-    -lang ru \
-    -r \
-    -f 50
+    -m /path/to/local/directory/with/models \
+    -lang ru
 ```
 
 The **1st** argument `-i` specifies the name of the source audio or video in any format supported by FFmpeg. 
 
 The **2st** argument `-o` specifies the name of the resulting SubRip file into which the recognized transcription will be written.
 
-Other arguments are not required. If you do not specify them, then their default values will be used. But I think, that their description matters for any user. So, `-lang` specifies the used language. You can select Russian (*ru*, *rus*, *russian*) or English (*en*, *eng*, *english*). The default language is Russian.
+Other arguments are not required. If you do not specify them, then their default values will be used. But I think, that their description matters for any user. So, `-lang` specifies the used language. You can select Russian (*ru*, *rus*, *russian*) or English (*en*, *eng*, *english*). The default language is Russian. Yet another argument `-m` points to the directory with all needed pre-downloaded models. This directory must include several subdirectories, which contain localized models for corresponding languages (`ru` or `en` is supported now). In turn, each language subdirectory includes three more subdirectories corresponding to the three models used:
 
-`-r` indicates the need for a more smart rescoring of speech hypothesis with a large language model as like as T5. This option is possible for Russian only, but it is important for good quality of generated transcription. Thus, I highly recommend using the option `-r` if you want to transcribe a Russian speech signal.
+1) `wav2vec2` (for preliminary speech recognition and segmentation into speech frames);
+2) `ast` (for filtering non-speech segments);
+3) `whisper` (for final speech recognition).
 
-`-f` sets the maximum duration of the sound frame (in seconds). The fact is that the **Pisets** is designed so that a very long audio signal is divided into smaller sound frames, then these frames are recognized independently, and the recognition results are glued together into a single transcription. The need for such a procedure is due to the architecture of the acoustic neural network. And this argument determines the maximum duration of such frame, as defined above. The default value is 50 seconds, and I don't recommend changing it.
+If you don't specify the argument `-m`, then all needed models will be automatically downloaded from Huggingface hub:
 
-If your computer has CUDA-compatible GPU, and your PyTorch has been correctly installed for this GPU, then the **Pisets** will transcribe your speech very quickly. So, the real-time factor (xRT), defined as the ratio between the time it takes to process the input and the duration of the input, is approximately 0.15 - 0.25 (it depends on the concrete GPU type). But if you use CPU only, then the **Pisets** will calculate your speech transcription significantly slower (xRT is approximately 1.0 - 1.5).  
+- for Russian:
+  1) [bond005/Wav2Vec2-Large-Ru-Golos](https://huggingface.co/bond005/wav2vec2-large-ru-golos),
+  2) [MIT/ast-finetuned-audioset-10-10-0.4593](https://huggingface.co/MIT/ast-finetuned-audioset-10-10-0.4593),
+  3) [bond005/whisper-large-v3-ru-podlodka](https://huggingface.co/bond005/whisper-large-v3-ru-podlodka);
+
+- for English:
+  1) [jonatasgrosman/wav2vec2-large-xlsr-53-english](https://huggingface.co/jonatasgrosman/wav2vec2-large-xlsr-53-english),
+  2) [MIT/ast-finetuned-audioset-10-10-0.4593](https://huggingface.co/MIT/ast-finetuned-audioset-10-10-0.4593),
+  3) [openai/whisper-large-v3](https://huggingface.co/openai/whisper-large-v3).
+
+Also, you can generate the transcription of your audio-record as a DocX file:
+
+```shell
+python speech_to_docx.py \
+    -i /path/to/your/sound/or/video.m4a \
+    -o /path/to/resulted/transcription.docx \
+    -m /path/to/local/directory/with/models \
+    -lang ru
+```
+
+If your computer has CUDA-compatible GPU, and your PyTorch has been correctly installed for this GPU, then the **Pisets** will transcribe your speech very quickly. So, the real-time factor (xRT), defined as the ratio between the time it takes to process the input and the duration of the input, is approximately 0.15 - 0.25 (it depends on the concrete GPU type). But if you use CPU only, then the **Pisets** will calculate your speech transcription significantly slower (xRT is approximately 1.0 - 1.5).
 
 ### Docker and REST-API
 
@@ -68,65 +89,49 @@ Installation of the **Pisets** can be difficult, especially for Windows users (i
 You can build the docker container youself:
 
 ```shell
-docker build -t bond005/pisets:0.1 .
+docker build -t bond005/pisets:0.2 .
 ```
 
 But the easiest way is to download the built image from Docker-Hub:
 
 ```shell
-docker pull bond005/pisets:0.1
+docker pull bond005/pisets:0.2
 ```
 
 After building (or pulling) you have to run this docker container:
 
 ```shell
-docker run -p 127.0.0.1:8040:8040 pisets:0.1
+docker run --rm --gpus all -p 127.0.0.1:8040:8040 bond005/pisets:0.2
 ```
 
-Hurray! The docker container is ready for use, and the **Pisets** will transcribe your speech. You can use the Python client for the **Pisets** service in the script [client_ru_demo.py](https://github.com/bond005/pisets/blob/main/client_ru_demo.py):
+Hurray! The docker container is ready for use on GPU, and the **Pisets** will transcribe your speech. You can use the Python client for the **Pisets** service in the script [client_ru_demo.py](https://github.com/bond005/pisets/blob/main/client_ru_demo.py):
 
 ```shell
 python client_ru_demo.py \
     -i /path/to/your/sound/or/video.m4a \
-    -o /path/to/resulted/transcription.srt
-```
-
-But the easiest way is to use a special virtual machine with the **Pisets** in Yandex Cloud. This is an example [curl](https://curl.se/) for transcribing your speech with the **Pisets** in the Unix-like OS:
-
-```shell
-echo -e $(curl -X POST 178.154.244.147:8040/transcribe -F "audio=@/path/to/your/sound/or/video.m4a" | awk '{ print substr( $0, 2, length($0)-2 ) }') > /path/to/resulted/transcription.srt
+    -o /path/to/resulted/transcription.docx
 ```
 
 #### Important notes
-1. The **Pisets** in the abovementioned docker container currently supports only Russian. If you want to transcribe English speech, then you have use the command-line tool `speech_to_srt.py`.
+The **Pisets** in the abovementioned docker container currently supports only Russian. If you want to transcribe English speech, then you have to use the command-line tool `speech_to_srt.py` or `speech_to_docx.py`.
 
-2. This docker container, unlike the command-line tool, does not support GPU.
+### Cloud computing
 
-## Models and algorithms
+You can open your [personal account](https://lk.sibnn.ai/login?redirect=/) (in Russian) on the [SibNN.AI](https://sibnn.ai/) and upload your audio recordings of any size for their automatic recognition.
 
-The **Pisets** transcribes speech signal in four steps:
-
-1. The acoustic deep neural network, based on fine-tuned [Wav2Vec2](https://arxiv.org/abs/2006.11477), performs the primary recognition of the speech signal and calculates the probabilities of the recognized letters. So the result of the first step is a probability matrix.
-2. The statistical N-gram language model translates the probability matrix into recognized text using a CTC beam search decoder.
-3. The language deep neural network, based on fine-tuned [T5](https://arxiv.org/abs/2010.11934), corrects possible errors and generates the final recognition text in a "pure" form (without punctuations, only in lowercase, and so on). 
-4. The last component of the "Pisets" places punctuation marks and capital letters.
-
-The first and the second steps for English speech are implemented with Patrick von Platen's [Wav2Vec2-Base-960h + 4-gram](https://huggingface.co/patrickvonplaten/wav2vec2-large-960h-lv60-self-4-gram), and Russian speech transcribing is based on my [Wav2Vec2-Large-Ru-Golos-With-LM](https://huggingface.co/bond005/wav2vec2-large-ru-golos-with-lm).
-
-The third step is not supported for English speech, but it is based on my [ruT5-ASR](https://huggingface.co/bond005/ruT5-ASR) for Russian speech.
-
-The fourth step is realized on basis of [the multilingual text enhancement model created by Silero](https://github.com/snakers4/silero-models#text-enhancement).
-
-My tests show a strong superiority of the recognition system based on the given scheme over Whisper Medium, and a significant superiority over Whisper Large when transcribing Russian speech. The methodology and test results are open:
-
-- Wav2Vec2 + 3-gram LM + T5-ASR for Russian: https://www.kaggle.com/code/bond005/wav2vec2-ru-lm-t5-eval
-- Whisper Medium for Russian: https://www.kaggle.com/code/bond005/whisper-medium-ru-eval
-
-Also, you can see the independent evaluation of my [ Wav2Vec2-Large-Ru-Golos-With-LM](https://huggingface.co/bond005/wav2vec2-large-ru-golos-with-lm) model (without T5-based rescorer) on various Russian speech corpora in comparison with other open Russian speech recognition models: https://alphacephei.com/nsh/2023/01/22/russian-models.html (in Russian). 
+In addition, you can try the demo of the cloud **Pisets** without registration on the web-page https://pisets.dialoger.tech (the demo without registration contains a limit on the maximum length of an audio recording of no more than 5 minutes, but allows you to record a signal from a microphone).
 
 ## Contact
 
 Ivan Bondarenko - [@Bond_005](https://t.me/Bond_005) - [bond005@yandex.ru](mailto:bond005@yandex.ru)
+
+## Acknowledgment
+
+This project was developed as part of a more fundamental project to create an open source system for automatic transcription and semantic analysis of audio recordings of interviews  in Russian. Many journalists, sociologist and other specialists need to prepare the interview manually, and automatization can help their.
+
+The [Foundation for Assistance to Small Innovative Enterprises](https://fasie.ru) which is Russian governmental non-profit organization supports an unique program to build free and open-source artificial intelligence systems. This programs is known as "Code - Artificial Intelligence" (see https://fasie.ru/press/fund/kod-ai/?sphrase_id=114059 in Russian). The abovementioned project was started within the first stage of the "Code - Artificial Intelligence" program. You can see the first-stage winners list on this web-page: https://fasie.ru/competitions/kod-ai-results (in Russian).
+
+Therefore, I thank The Foundation for Assistance to Small Innovative Enterprises for this support.
 
 ## License
 

@@ -2,58 +2,58 @@ import logging
 import os
 import tempfile
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 import numpy as np
+import uuid
+import asyncio
 
 from wav_io.wav_io import transform_to_wavpcm, load_sound
 from wav_io.wav_io import TARGET_SAMPLING_FREQUENCY
-from vad.vad import initialize_vad_ensemble, split_long_sound
-from asr.asr import recognize, initialize_model
-from rescoring.rescoring import initialize_rescorer, rescore
-from normalization.normalization import initialize_normalizer
-from normalization.normalization import tokenize_text, normalize_text, calculate_sentence_bounds
+from asr.asr import initialize_model_for_speech_recognition
+from asr.asr import initialize_model_for_speech_classification
+from asr.asr import initialize_model_for_speech_segmentation
+from asr.asr import transcribe as transcribe_speech
 from utils.utils import time_to_str
 
+from docx import Document
 
 speech_to_srt_logger = logging.getLogger(__name__)
 logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s',
                     level=logging.INFO)
 app = Flask(__name__)
 
-FRAME_SIZE = 50
+RESULTS_FOLDER = 'results'
+os.makedirs(RESULTS_FOLDER, exist_ok=True)
+
+task_status = {}
+
+MAX_FRAME_SIZE = 20
+MIN_FRAME_SIZE = 1
 LANGUAGE_NAME = 'ru'
 
 try:
-    processor, model = initialize_model(LANGUAGE_NAME)
+    segmenter = initialize_model_for_speech_segmentation(LANGUAGE_NAME)
 except BaseException as ex:
     err_msg = str(ex)
     speech_to_srt_logger.error(err_msg)
     raise
-speech_to_srt_logger.info('The model and processor are loaded.')
+speech_to_srt_logger.info('The Wav2Vec2-based segmenter is loaded.')
 
 try:
-    tokenizer_for_rescorer, model_of_rescorer = initialize_rescorer(LANGUAGE_NAME)
+    vad = initialize_model_for_speech_classification()
 except BaseException as ex:
     err_msg = str(ex)
     speech_to_srt_logger.error(err_msg)
     raise
-speech_to_srt_logger.info('The rescorer is loaded.')
+speech_to_srt_logger.info('The AST-based voice activity detector is loaded.')
 
 try:
-    vad = initialize_vad_ensemble()
+    asr = initialize_model_for_speech_recognition(LANGUAGE_NAME)
 except BaseException as ex:
     err_msg = str(ex)
     speech_to_srt_logger.error(err_msg)
     raise
-speech_to_srt_logger.info('The VAD is initialized.')
-
-try:
-    text_normalizer = initialize_normalizer()
-except BaseException as ex:
-    err_msg = str(ex)
-    speech_to_srt_logger.error(err_msg)
-    raise
-speech_to_srt_logger.info('The text normalizer is initialized.')
+speech_to_srt_logger.info('The Whisper-based ASR is initialized.')
 
 
 @app.route('/ready')
@@ -62,19 +62,21 @@ def ready():
 
 
 @app.route('/transcribe', methods=['POST'])
-def transcribe():
+async def transcribe():
+    task_id = str(uuid.uuid4())
+    task_status[task_id] = {"status": "Not ready"}
     speech_to_srt_logger.info('~~~Recognition process started~~~')
     if 'audio' not in request.files:
         speech_to_srt_logger.error('400: No audiofile part in the request')
-        resp = jsonify({'message': 'No audiofile part in the request'})
-        resp.status_code = 400
-        return resp
+        task_status[task_id] = jsonify(
+            {"status": "Error", "status_code": 400, "message": "No audiofile part in the request"})
+        return task_status[task_id]
     file = request.files['audio']
     if file.filename == '':
         speech_to_srt_logger.error('400: No audio file provided for upload')
-        resp = jsonify({'message': 'No audio file provided for upload'})
-        resp.status_code = 400
-        return resp
+        task_status[task_id] = jsonify(
+            {"status": "Error", "status_code": 400, "message": "No audio file provided for upload"})
+        return task_status[task_id]
 
     point_pos = file.filename.rfind('.')
     if point_pos > 0:
@@ -83,9 +85,9 @@ def transcribe():
         src_file_ext = ''
     if len(src_file_ext) == 0:
         speech_to_srt_logger.error('400: Unknown type of the file provided for upload')
-        resp = jsonify({'message': 'Unknown type of the file provided for upload'})
-        resp.status_code = 400
-        return resp
+        task_status[task_id] = jsonify(
+            {"status": "Error", "status_code": 400, "message": "Unknown type of the file provided for upload"})
+        return task_status[task_id]
     tmp_audio_name = ''
     tmp_wav_name = ''
     err_msg = ''
@@ -122,143 +124,58 @@ def transcribe():
         if len(err_msg) == 0:
             err_msg = 'Audio file is empty.'
             speech_to_srt_logger.error('400: ' + err_msg)
-            resp = jsonify({'message': err_msg})
+            task_status[task_id]['message'] = err_msg
         else:
-            resp = jsonify({'message': err_msg})
-        resp.status_code = 400
-        return resp
+            task_status[task_id]['message'] = err_msg
+        task_status[task_id]['status'] = 'Error'
+        task_status[task_id]['status_code'] = 400
+        return jsonify(task_status[task_id])
 
     if not isinstance(input_sound, np.ndarray):
         speech_to_srt_logger.info(f'The sound "{file.filename}" is stereo.')
         input_sound = (input_sound[0] + input_sound[1]) / 2.0
-    speech_to_srt_logger.info(f'The total duration of the sound "{file.filename}" is '
+    speech_to_srt_logger.info(f'The total duration of the new sound "{file.filename}" is '
                               f'{time_to_str(input_sound.shape[0] / TARGET_SAMPLING_FREQUENCY)}.')
 
-    try:
-        sound_frames, frame_bounds = split_long_sound(input_sound, vad, max_sound_len=FRAME_SIZE * 16_000)
-    except BaseException as ex:
-        err_msg = str(ex)
-        speech_to_srt_logger.error('400: ' + err_msg)
-        resp = jsonify({'message': err_msg})
-        resp.status_code = 400
-        return resp
-    speech_to_srt_logger.info(f'The sound "{file.filename}" is divided into {len(sound_frames)} shorter frames.')
-    try:
-        words = recognize(sound_frames[0], processor, model)
-    except BaseException as ex:
-        err_msg = str(ex)
-        speech_to_srt_logger.error('400: ' + err_msg)
-        resp = jsonify({'message': err_msg})
-        resp.status_code = 400
-        return resp
-    speech_to_srt_logger.info(f'The sound frame 1 is recognized '
-                              f'(the frame duration is {sound_frames[0].shape[0] / TARGET_SAMPLING_FREQUENCY}).')
-    if (tokenizer_for_rescorer is not None) and (model_of_rescorer is not None):
-        try:
-            words = rescore(words, tokenizer_for_rescorer, model_of_rescorer)
-        except BaseException as ex:
-            err_msg = str(ex)
-            speech_to_srt_logger.error('400: ' + err_msg)
-            resp = jsonify({'message': err_msg})
-            resp.status_code = 400
-            return resp
-        speech_to_srt_logger.info('The sound frame 1 is rescored.')
-    try:
-        sentences = tokenize_text(
-            s=normalize_text(
-                s=' '.join([cur[0] for cur in words]),
-                normalizer=text_normalizer,
-                lang=LANGUAGE_NAME
-            ),
-            lang=LANGUAGE_NAME
-        )
-    except BaseException as ex:
-        err_msg = str(ex)
-        speech_to_srt_logger.error('400: ' + err_msg)
-        resp = jsonify({'message': err_msg})
-        resp.status_code = 400
-        return resp
-    try:
-        sentences_with_bounds = calculate_sentence_bounds(
-            asr_result=words,
-            sentences=sentences
-        )
-    except BaseException as ex:
-        err_msg = str(ex)
-        speech_to_srt_logger.error('400: ' + err_msg)
-        resp = jsonify({'message': err_msg})
-        resp.status_code = 400
-        return resp
-    del words, sentences
-    speech_to_srt_logger.info('The sound frame 1 is normalized and tokenized.')
+    if input_sound is None:
+        speech_to_srt_logger.info(f'The sound "{file.filename}" is empty.')
+    else:
+        speech_to_srt_logger.error(task_id)
+        await asyncio.create_task(create_result_file(input_sound, segmenter, vad, asr, task_id))
 
-    for counter, (cur_frame, frame_bounds) in enumerate(zip(sound_frames[1:], frame_bounds[1:])):
-        try:
-            words_ = recognize(cur_frame, processor, model)
-        except BaseException as ex:
-            err_msg = str(ex)
-            speech_to_srt_logger.error('400: ' + err_msg)
-            resp = jsonify({'message': err_msg})
-            resp.status_code = 400
-            return resp
-        speech_to_srt_logger.info(f'The sound frame {counter + 2} is recognized '
-                                  f'(the frame duration is {cur_frame.shape[0] / TARGET_SAMPLING_FREQUENCY}).')
-        if (tokenizer_for_rescorer is not None) and (model_of_rescorer is not None):
-            try:
-                words_ = rescore(words_, tokenizer_for_rescorer, model_of_rescorer)
-            except BaseException as ex:
-                err_msg = str(ex)
-                speech_to_srt_logger.error('400: ' + err_msg)
-                resp = jsonify({'message': err_msg})
-                resp.status_code = 400
-                return resp
-            speech_to_srt_logger.info(f'The sound frame {counter + 2} is rescored.')
-        frame_start = frame_bounds[0] / TARGET_SAMPLING_FREQUENCY
-        words = []
-        for word_text, word_start, word_end in words_:
-            words.append((
-                word_text,
-                word_start + frame_start,
-                word_end + frame_start
-            ))
-        del words_
-        try:
-            sentences = tokenize_text(
-                s=normalize_text(
-                    s=' '.join([cur[0] for cur in words]),
-                    normalizer=text_normalizer,
-                    lang=LANGUAGE_NAME
-                ),
-                lang=LANGUAGE_NAME
-            )
-        except BaseException as ex:
-            err_msg = str(ex)
-            speech_to_srt_logger.error('400: ' + err_msg)
-            resp = jsonify({'message': err_msg})
-            resp.status_code = 400
-            return resp
-        try:
-            sentences_with_bounds += calculate_sentence_bounds(
-                asr_result=words,
-                sentences=sentences
-            )
-        except BaseException as ex:
-            err_msg = str(ex)
-            speech_to_srt_logger.error('400: ' + err_msg)
-            resp = jsonify({'message': err_msg})
-            resp.status_code = 400
-            return resp
-        del words, sentences
-        speech_to_srt_logger.info(f'The sound frame {counter + 2} is normalized and tokenized.')
+    return jsonify({'task_id': task_id})
 
-    output_text = ''
-    for counter, (sentence_text, sent_start, sent_end) in enumerate(sentences_with_bounds):
-        output_text += f'{counter + 1}\n'
-        output_text += f'{time_to_str(sent_start)} --> {time_to_str(sent_end)}\n'
-        output_text += f'{sentence_text}\n\n'
-    resp = jsonify(output_text)
-    resp.status_code = 200
-    return resp
+
+async def create_result_file(input_sound, segmenter, vad, asr, task_id):
+    texts_with_timestamps = transcribe_speech(input_sound, segmenter, vad, asr, MIN_FRAME_SIZE, MAX_FRAME_SIZE)
+    output_filename = task_id + '.docx'
+    doc = Document()
+    for start_time, end_time, sentence_text in texts_with_timestamps:
+        line = f'{start_time:.2f} - {end_time:.2f} - {sentence_text}'
+        doc.add_paragraph(line)
+        doc.add_paragraph('')
+
+    result_path = os.path.join(RESULTS_FOLDER, output_filename)
+    doc.save(result_path)
+
+    task_status[task_id] = jsonify({'status': 'Ready', 'status_code': 200, 'result_path': result_path})
+
+
+@app.route('/status/<task_id>', methods=['GET'])
+def get_status(task_id):
+    status = task_status.get(task_id, None)
+    if status is None:
+        return jsonify({'error': 'Task not found'}), 404
+    return status
+
+
+@app.route('/download_result/<task_id>', methods=['GET'])
+def download_result(task_id):
+    result_file = f'{RESULTS_FOLDER}/{task_id}.docx'
+    if not os.path.isfile(result_file):
+        return jsonify({'error': 'Result not ready or task not found'}), 404
+
+    return send_file(result_file, as_attachment=True)
 
 
 if __name__ == '__main__':

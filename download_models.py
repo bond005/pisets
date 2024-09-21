@@ -1,8 +1,9 @@
 import sys
 
-from asr.asr import initialize_model
-from rescoring.rescoring import initialize_rescorer
-from normalization.normalization import check_language, initialize_normalizer
+from asr.asr import initialize_model_for_speech_recognition
+from asr.asr import initialize_model_for_speech_classification
+from asr.asr import initialize_model_for_speech_segmentation
+from asr.asr import check_language
 
 
 def main():
@@ -10,9 +11,9 @@ def main():
         raise ValueError('The language name is not specified!')
     language_name = check_language(sys.argv[1])
 
-    processor, model = initialize_model(language_name)
-    tokenizer_for_rescorer, model_of_rescorer = initialize_rescorer(language_name)
-    text_normalizer = initialize_normalizer()
+    _ = initialize_model_for_speech_segmentation(language_name)
+    _ = initialize_model_for_speech_classification()
+    _ = initialize_model_for_speech_recognition(language_name)
 
 
 if __name__ == '__main__':

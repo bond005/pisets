@@ -1,5 +1,8 @@
-FROM python:3.9
+FROM pytorch/pytorch:2.3.1-cuda11.8-cudnn8-runtime
 MAINTAINER Ivan Bondarenko <i.bondarenko@g.nsu.ru>
+
+ENV TZ=UTC
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime
 
 RUN apt-get update
 
@@ -11,7 +14,6 @@ RUN apt-get install -y apt-utils && \
     apt-get install -y apt-transport-https && \
     apt-get install -y build-essential && \
     apt-get install -y git g++ autoconf-archive libtool && \
-    apt-get install -y python-setuptools python-dev && \
     apt-get install -y python3-setuptools python3-dev && \
     apt-get install -y cmake-data && \
     apt-get install -y vim && \
@@ -22,46 +24,32 @@ RUN apt-get install -y apt-utils && \
     apt-get install -y zlib1g zlib1g-dev lzma liblzma-dev && \
     apt-get install -y libboost-all-dev
 
-RUN wget https://github.com/Kitware/CMake/releases/download/v3.26.3/cmake-3.26.3.tar.gz
-RUN tar -zxvf cmake-3.26.3.tar.gz
-RUN rm cmake-3.26.3.tar.gz
-WORKDIR cmake-3.26.3
-RUN ./configure
-RUN make
-RUN make install
-WORKDIR ..
+ENV NVIDIA_VISIBLE_DEVICES all
+ENV NVIDIA_DRIVER_CAPABILITIES compute,utility
+ENV NVIDIA_REQUIRE_CUDA "cuda>=11.0"
 
 RUN python3 --version
 RUN pip3 --version
 
-RUN git clone https://github.com/kpu/kenlm.git
-RUN mkdir -p kenlm/build
-WORKDIR kenlm/build
-RUN cmake ..
-RUN make
-RUN make install
-WORKDIR ..
-RUN python3 -m pip install -e .
-WORKDIR ..
-
 RUN mkdir /usr/src/pisets
+RUN mkdir /usr/src/huggingface_cached
 
 COPY ./server_ru.py /usr/src/pisets/server_ru.py
 COPY ./download_models.py /usr/src/pisets/download_models.py
 COPY ./requirements.txt /usr/src/pisets/requirements.txt
 COPY ./asr/ /usr/src/pisets/asr/
-COPY ./normalization/ /usr/src/pisets/normalization/
-COPY ./rescoring/ /usr/src/pisets/rescoring/
 COPY ./utils/ /usr/src/pisets/utils/
 COPY ./vad/ /usr/src/pisets/vad/
 COPY ./wav_io/ /usr/src/pisets/wav_io/
-COPY ./models/ /usr/src/pisets/models/
 
 WORKDIR /usr/src/pisets
 
 RUN python3 -m pip install --upgrade pip
-RUN python3 -m pip install torch==2.0.0 torchvision==0.15.0 torchaudio==2.0.0 --index-url https://download.pytorch.org/whl/cpu
 RUN python3 -m pip install -r requirements.txt
+
+RUN export HF_HOME=/usr/src/huggingface_cached
+RUN export PYTORCH_CUDA_ALLOC_CONF=garbage_collection_threshold:0.6,max_split_size_mb:128
+RUN python -c "from transformers import pipeline; print(pipeline('sentiment-analysis', model='philschmid/tiny-bert-sst2-distilled')('we love you'))"
 
 RUN python3 download_models.py ru
 
