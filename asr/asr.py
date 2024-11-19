@@ -474,11 +474,11 @@ def segment_sound(
       neighbour if it is shorter than `min_segment_size` and the pause between them is also
       shorter than `min_segment_size`.
 
-    NOTE: is not guaranteed that all output segments are larger than `min_segment_size`,
+    NOTE: It is not guaranteed that all output segments are larger than `min_segment_size`,
     if total length returned by `segmenter` (from the start of the first segment to the end of
     the last segment), including `indent_for_silence`, is not enough.
 
-    NOTE: is not guaranteed that all output segments are smaller than `max_segment_size`,
+    NOTE: It is not guaranteed that all output segments are smaller than `max_segment_size`,
     because a single segment returned by `segmenter` can exceed `max_segment_size`, especially
     after expanding segments with `indent_for_silence`. Another reason is that 4-th step (joining
     short segments to long ones) may produce segments that exceed `max_segment_size`. For example,
@@ -559,7 +559,7 @@ def recognize_sounds(sounds: List[np.ndarray], recognizer: Pipeline) -> List[str
     - recognizer: an AutomaticSpeechRecognitionPipeline that can return transcriptions. See
       `initialize_model_for_speech_recognition` for details.
 
-    Sequentially applies `recognizer` to each sound, gather a list of the resulting transcriptions
+    Sequentially applies `recognizer` to each sound, gathers a list of the resulting transcriptions
     (a "text" field in `recognizer` output). Further, calls `remove_oscillatory_hallucinations` for
     each transcription, and returns the list.
     """
