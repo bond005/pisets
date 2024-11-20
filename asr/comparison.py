@@ -179,7 +179,12 @@ def compare(text1: str, text2: str) -> list[CorrectionSuggestion]:
 
 def visualize_correction_suggestions(text: str, suggestions: list[CorrectionSuggestion]) -> str:
     """
-    Visualize suggestions in {brackets}. Example:
+    Visualize suggestions in {brackets}.
+    - {aaa|bbb} - suggest to replace aaa to bbb
+    - {aaa} - suggest to remove aaa
+    - {+aaa} - suggest to insert aaa (not present in `text`)
+    
+    Example:
     
     ```
     text1 = 'она советовала нам отнестись посему предмету к одному почтенному мужу'
