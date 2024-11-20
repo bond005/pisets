@@ -19,7 +19,7 @@ def load_sound(fname: str) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray], N
     - A waveform array for mono-channel sound
     - Tuple of two waveform arrays for two-channel sound
 
-    Raises `ValueError` if wrong rate, `wave.Error` if wong format (maybe more exceptions?).
+    Raises `ValueError` if wrong rate, `wave.Error` if wrong format (maybe more exceptions?).
 
     In Pisets, this function replaces `librosa.load`, since librosa may have problems when
     installing on Windows. Since `load_sound` requires a specific format and rate,

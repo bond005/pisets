@@ -618,6 +618,21 @@ def transcribe(
     Output: a list of tuples (start_time, end_time, transcription) for all found utterances,
     can be empty.
 
+    Example:
+    ```
+    waveform = load_sound('tests/testdata/mono_sound.wav')
+    segmenter = initialize_model_for_speech_segmentation()
+    voice_activity_detector = initialize_model_for_speech_classification()
+    asr = initialize_model_for_speech_recognition('ru', 'openai/whisper-tiny')
+    transcribe(waveform, segmenter, vad, asr, min_segment_size=1, max_segment_size=5)
+
+    >>> [
+        (0.0, 4.18, 'Она советовала нам отнести и спасену предмету к одному почтиному мужу.'),
+        (4.18, 6.8100000000000005, 'Большому другому и вану переселший годы.'),
+        (6.8100000000000005, 11.28, 'счастливые дни, как вешные воды, промчались они.')
+    ]
+    ```
+
     TODO when calling `voice_activity_detector` and `asr`, process all segments at once as
     batch to improve performance, especially for long audios. However, need to calculate
     max batch size to fit into GPU memory, or this help:
