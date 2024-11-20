@@ -168,7 +168,7 @@ def initialize_model_for_speech_segmentation(language: str = 'ru', model_info: O
     transcribed speech.
 
     NOTE: the pipeline should have the ability to process long audios. To achieve this, the method calls
-    the `transformers.pipeline` feactory with arguments `chunk_length_s=10, stride_length_s=(4, 2)`.
+    the `transformers.pipeline` factory with arguments `chunk_length_s=10, stride_length_s=(4, 2)`.
 
     Example:
     ```
