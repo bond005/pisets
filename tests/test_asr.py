@@ -19,47 +19,47 @@ except:
 class TestASR(unittest.TestCase):
     def test_strip_segments_pos01(self):
         max_sound_duration = 5.5
-        input_segments = [(0.1, 0.9), (0.95, 3.0), (3.0, 5.0)]
-        target_segments = [(0.1, 0.9), (0.95, 3.0), (3.0, 5.0)]
+        input_segments = [(0.1, 0.9, ''), (0.95, 3.0, ''), (3.0, 5.0, '')]
+        target_segments = [(0.1, 0.9, ''), (0.95, 3.0, ''), (3.0, 5.0, '')]
         predicted_segments = strip_segments(input_segments, max_sound_duration)
         self.assertIsInstance(predicted_segments, list)
         self.assertEqual(len(predicted_segments), len(target_segments))
         for idx in range(len(target_segments)):
             self.assertIsInstance(predicted_segments[idx], tuple)
-            self.assertEqual(len(predicted_segments[idx]), 2)
+            self.assertEqual(len(predicted_segments[idx]), 3)
             self.assertAlmostEqual(predicted_segments[idx][0], target_segments[idx][0])
             self.assertAlmostEqual(predicted_segments[idx][1], target_segments[idx][1])
 
     def test_strip_segments_pos02(self):
         max_sound_duration = 5.5
-        input_segments = [(-0.1, 0.9), (0.95, 3.0), (3.0, 5.0)]
-        target_segments = [(0.0, 0.9), (0.95, 3.0), (3.0, 5.0)]
+        input_segments = [(-0.1, 0.9, ''), (0.95, 3.0, ''), (3.0, 5.0, '')]
+        target_segments = [(0.0, 0.9, ''), (0.95, 3.0, ''), (3.0, 5.0, '')]
         predicted_segments = strip_segments(input_segments, max_sound_duration)
         self.assertIsInstance(predicted_segments, list)
         self.assertEqual(len(predicted_segments), len(target_segments))
         for idx in range(len(target_segments)):
             self.assertIsInstance(predicted_segments[idx], tuple)
-            self.assertEqual(len(predicted_segments[idx]), 2)
+            self.assertEqual(len(predicted_segments[idx]), 3)
             self.assertAlmostEqual(predicted_segments[idx][0], target_segments[idx][0])
             self.assertAlmostEqual(predicted_segments[idx][1], target_segments[idx][1])
 
     def test_strip_segments_pos03(self):
         max_sound_duration = 5.5
-        input_segments = [(0.1, 0.9), (0.95, 3.0), (3.0, 5.8)]
-        target_segments = [(0.1, 0.9), (0.95, 3.0), (3.0, 5.5)]
+        input_segments = [(0.1, 0.9, ''), (0.95, 3.0, ''), (3.0, 5.8, '')]
+        target_segments = [(0.1, 0.9, ''), (0.95, 3.0, ''), (3.0, 5.5, '')]
         predicted_segments = strip_segments(input_segments, max_sound_duration)
         self.assertIsInstance(predicted_segments, list)
         self.assertEqual(len(predicted_segments), len(target_segments))
         for idx in range(len(target_segments)):
             self.assertIsInstance(predicted_segments[idx], tuple)
-            self.assertEqual(len(predicted_segments[idx]), 2)
+            self.assertEqual(len(predicted_segments[idx]), 3)
             self.assertAlmostEqual(predicted_segments[idx][0], target_segments[idx][0])
             self.assertAlmostEqual(predicted_segments[idx][1], target_segments[idx][1])
 
     def test_select_word_groups_pos01(self):
         segment_size = 2
-        words = [(0.1, 0.5), (0.7, 1.0), (1.1, 2.3), (2.7, 2.8), (3.6, 3.8), (3.8, 4.0)]
-        target_groups = [[(0.1, 0.5)], [(0.7, 1.0), (1.1, 2.3)], [(2.7, 2.8)], [(3.6, 3.8), (3.8, 4.0)]]
+        words = [(0.1, 0.5, ''), (0.7, 1.0, ''), (1.1, 2.3, ''), (2.7, 2.8, ''), (3.6, 3.8, ''), (3.8, 4.0, '')]
+        target_groups = [[(0.1, 0.5, '')], [(0.7, 1.0, ''), (1.1, 2.3, '')], [(2.7, 2.8, '')], [(3.6, 3.8, ''), (3.8, 4.0, '')]]
         predicted_groups = select_word_groups(words, segment_size)
         self.assertIsInstance(predicted_groups, list)
         self.assertEqual(len(predicted_groups), len(target_groups))
@@ -68,14 +68,14 @@ class TestASR(unittest.TestCase):
             self.assertEqual(len(predicted_groups[group_idx]), len(target_groups[group_idx]))
             for word_idx in range(len(target_groups[group_idx])):
                 self.assertIsInstance(predicted_groups[group_idx][word_idx], tuple)
-                self.assertEqual(len(predicted_groups[group_idx][word_idx]), 2)
+                self.assertEqual(len(predicted_groups[group_idx][word_idx]), 3)
                 self.assertAlmostEqual(predicted_groups[group_idx][word_idx][0], target_groups[group_idx][word_idx][0])
                 self.assertAlmostEqual(predicted_groups[group_idx][word_idx][1], target_groups[group_idx][word_idx][1])
 
     def test_select_word_groups_pos02(self):
         segment_size = 2
-        words = [(0.1, 0.5), (0.7, 1.0)]
-        target_groups = [[(0.1, 0.5), (0.7, 1.0)]]
+        words = [(0.1, 0.5, ''), (0.7, 1.0, '')]
+        target_groups = [[(0.1, 0.5, ''), (0.7, 1.0, '')]]
         predicted_groups = select_word_groups(words, segment_size)
         self.assertIsInstance(predicted_groups, list)
         self.assertEqual(len(predicted_groups), len(target_groups))
@@ -84,14 +84,14 @@ class TestASR(unittest.TestCase):
             self.assertEqual(len(predicted_groups[group_idx]), len(target_groups[group_idx]))
             for word_idx in range(len(target_groups[group_idx])):
                 self.assertIsInstance(predicted_groups[group_idx][word_idx], tuple)
-                self.assertEqual(len(predicted_groups[group_idx][word_idx]), 2)
+                self.assertEqual(len(predicted_groups[group_idx][word_idx]), 3)
                 self.assertAlmostEqual(predicted_groups[group_idx][word_idx][0], target_groups[group_idx][word_idx][0])
                 self.assertAlmostEqual(predicted_groups[group_idx][word_idx][1], target_groups[group_idx][word_idx][1])
 
     def test_select_word_groups_pos03(self):
         segment_size = 2
-        words = [(0.1, 0.5), (3.7, 4.0)]
-        target_groups = [[(0.1, 0.5)], [(3.7, 4.0)]]
+        words = [(0.1, 0.5, ''), (3.7, 4.0, '')]
+        target_groups = [[(0.1, 0.5, '')], [(3.7, 4.0, '')]]
         predicted_groups = select_word_groups(words, segment_size)
         self.assertIsInstance(predicted_groups, list)
         self.assertEqual(len(predicted_groups), len(target_groups))
@@ -100,14 +100,14 @@ class TestASR(unittest.TestCase):
             self.assertEqual(len(predicted_groups[group_idx]), len(target_groups[group_idx]))
             for word_idx in range(len(target_groups[group_idx])):
                 self.assertIsInstance(predicted_groups[group_idx][word_idx], tuple)
-                self.assertEqual(len(predicted_groups[group_idx][word_idx]), 2)
+                self.assertEqual(len(predicted_groups[group_idx][word_idx]), 3)
                 self.assertAlmostEqual(predicted_groups[group_idx][word_idx][0], target_groups[group_idx][word_idx][0])
                 self.assertAlmostEqual(predicted_groups[group_idx][word_idx][1], target_groups[group_idx][word_idx][1])
 
     def test_select_word_groups_pos04(self):
         segment_size = 2
-        words = [(0.1, 4.0)]
-        target_groups = [[(0.1, 4.0)]]
+        words = [(0.1, 4.0, '')]
+        target_groups = [[(0.1, 4.0, '')]]
         predicted_groups = select_word_groups(words, segment_size)
         self.assertIsInstance(predicted_groups, list)
         self.assertEqual(len(predicted_groups), len(target_groups))
@@ -116,7 +116,7 @@ class TestASR(unittest.TestCase):
             self.assertEqual(len(predicted_groups[group_idx]), len(target_groups[group_idx]))
             for word_idx in range(len(target_groups[group_idx])):
                 self.assertIsInstance(predicted_groups[group_idx][word_idx], tuple)
-                self.assertEqual(len(predicted_groups[group_idx][word_idx]), 2)
+                self.assertEqual(len(predicted_groups[group_idx][word_idx]), 3)
                 self.assertAlmostEqual(predicted_groups[group_idx][word_idx][0], target_groups[group_idx][word_idx][0])
                 self.assertAlmostEqual(predicted_groups[group_idx][word_idx][1], target_groups[group_idx][word_idx][1])
 
@@ -273,98 +273,98 @@ class TestASR(unittest.TestCase):
         self.assertEqual(res, true_text)
 
     def test_join_short_segments_to_long_ones_pos01(self):
-        source_segments = [(0.5, 2.5), (2.7, 3.92), (5.0, 7.5)]
-        true_segments = [(0.5, 2.5), (2.7, 3.92), (5.0, 7.5)]
+        source_segments = [(0.5, 2.5, ''), (2.7, 3.92, ''), (5.0, 7.5, '')]
+        true_segments = [(0.5, 2.5, ''), (2.7, 3.92, ''), (5.0, 7.5, '')]
         predicted_segments = join_short_segments_to_long_ones(source_segments, 1)
         self.assertIsInstance(predicted_segments, list)
         self.assertEqual(len(predicted_segments), len(true_segments))
         for idx in range(len(true_segments)):
             self.assertIsInstance(predicted_segments[idx], tuple)
-            self.assertEqual(len(predicted_segments[idx]), 2)
+            self.assertEqual(len(predicted_segments[idx]), 3)
             self.assertAlmostEqual(predicted_segments[idx][0], true_segments[idx][0], delta=1e-6)
             self.assertAlmostEqual(predicted_segments[idx][1], true_segments[idx][1], delta=1e-6)
 
     def test_join_short_segments_to_long_ones_pos02(self):
-        source_segments = [(0.5, 1.1), (2.7, 3.92), (5.0, 7.5)]
-        true_segments = [(0.5, 1.1), (2.7, 3.92), (5.0, 7.5)]
+        source_segments = [(0.5, 1.1, ''), (2.7, 3.92, ''), (5.0, 7.5, '')]
+        true_segments = [(0.5, 1.1, ''), (2.7, 3.92, ''), (5.0, 7.5, '')]
         predicted_segments = join_short_segments_to_long_ones(source_segments, 1)
         self.assertIsInstance(predicted_segments, list)
         self.assertEqual(len(predicted_segments), len(true_segments))
         for idx in range(len(true_segments)):
             self.assertIsInstance(predicted_segments[idx], tuple)
-            self.assertEqual(len(predicted_segments[idx]), 2)
+            self.assertEqual(len(predicted_segments[idx]), 3)
             self.assertAlmostEqual(predicted_segments[idx][0], true_segments[idx][0], delta=1e-6)
             self.assertAlmostEqual(predicted_segments[idx][1], true_segments[idx][1], delta=1e-6)
 
     def test_join_short_segments_to_long_ones_pos03(self):
-        source_segments = [(0.5, 1.1), (1.7, 3.92), (5.0, 7.5)]
-        true_segments = [(0.5, 3.92), (5.0, 7.5)]
+        source_segments = [(0.5, 1.1, ''), (1.7, 3.92, ''), (5.0, 7.5, '')]
+        true_segments = [(0.5, 3.92, ''), (5.0, 7.5, '')]
         predicted_segments = join_short_segments_to_long_ones(source_segments, 1)
         self.assertIsInstance(predicted_segments, list)
         self.assertEqual(len(predicted_segments), len(true_segments))
         for idx in range(len(true_segments)):
             self.assertIsInstance(predicted_segments[idx], tuple)
-            self.assertEqual(len(predicted_segments[idx]), 2)
+            self.assertEqual(len(predicted_segments[idx]), 3)
             self.assertAlmostEqual(predicted_segments[idx][0], true_segments[idx][0], delta=1e-6)
             self.assertAlmostEqual(predicted_segments[idx][1], true_segments[idx][1], delta=1e-6)
 
     def test_join_short_segments_to_long_ones_pos04(self):
-        source_segments = [(0.5, 2.5), (2.7, 2.92), (5.0, 7.5)]
-        true_segments = [(0.5, 2.92), (5.0, 7.5)]
+        source_segments = [(0.5, 2.5, ''), (2.7, 2.92, ''), (5.0, 7.5, '')]
+        true_segments = [(0.5, 2.92, ''), (5.0, 7.5, '')]
         predicted_segments = join_short_segments_to_long_ones(source_segments, 1)
         self.assertIsInstance(predicted_segments, list)
         self.assertEqual(len(predicted_segments), len(true_segments))
         for idx in range(len(true_segments)):
             self.assertIsInstance(predicted_segments[idx], tuple)
-            self.assertEqual(len(predicted_segments[idx]), 2)
+            self.assertEqual(len(predicted_segments[idx]), 3)
             self.assertAlmostEqual(predicted_segments[idx][0], true_segments[idx][0], delta=1e-6)
             self.assertAlmostEqual(predicted_segments[idx][1], true_segments[idx][1], delta=1e-6)
 
     def test_join_short_segments_to_long_ones_pos05(self):
-        source_segments = [(0.5, 2.5), (2.7, 2.92), (3.0, 7.5)]
-        true_segments = [(0.5, 2.5), (2.7, 7.5)]
+        source_segments = [(0.5, 2.5, ''), (2.7, 2.92, ''), (3.0, 7.5, '')]
+        true_segments = [(0.5, 2.5, ''), (2.7, 7.5, '')]
         predicted_segments = join_short_segments_to_long_ones(source_segments, 1)
         self.assertIsInstance(predicted_segments, list)
         self.assertEqual(len(predicted_segments), len(true_segments))
         for idx in range(len(true_segments)):
             self.assertIsInstance(predicted_segments[idx], tuple)
-            self.assertEqual(len(predicted_segments[idx]), 2)
+            self.assertEqual(len(predicted_segments[idx]), 3)
             self.assertAlmostEqual(predicted_segments[idx][0], true_segments[idx][0], delta=1e-6)
             self.assertAlmostEqual(predicted_segments[idx][1], true_segments[idx][1], delta=1e-6)
 
     def test_join_short_segments_to_long_ones_pos06(self):
-        source_segments = [(0.5, 2.5), (2.7, 3.92), (4.0, 4.3)]
-        true_segments = [(0.5, 2.5), (2.7, 4.3)]
+        source_segments = [(0.5, 2.5, ''), (2.7, 3.92, ''), (4.0, 4.3, '')]
+        true_segments = [(0.5, 2.5, ''), (2.7, 4.3, '')]
         predicted_segments = join_short_segments_to_long_ones(source_segments, 1)
         self.assertIsInstance(predicted_segments, list)
         self.assertEqual(len(predicted_segments), len(true_segments))
         for idx in range(len(true_segments)):
             self.assertIsInstance(predicted_segments[idx], tuple)
-            self.assertEqual(len(predicted_segments[idx]), 2)
+            self.assertEqual(len(predicted_segments[idx]), 3)
             self.assertAlmostEqual(predicted_segments[idx][0], true_segments[idx][0], delta=1e-6)
             self.assertAlmostEqual(predicted_segments[idx][1], true_segments[idx][1], delta=1e-6)
 
     def test_join_short_segments_to_long_ones_pos07(self):
-        source_segments = [(0.5, 2.5), (2.7, 3.92), (5.0, 5.5)]
-        true_segments = [(0.5, 2.5), (2.7, 3.92), (5.0, 5.5)]
+        source_segments = [(0.5, 2.5, ''), (2.7, 3.92, ''), (5.0, 5.5, '')]
+        true_segments = [(0.5, 2.5, ''), (2.7, 3.92, ''), (5.0, 5.5, '')]
         predicted_segments = join_short_segments_to_long_ones(source_segments, 1)
         self.assertIsInstance(predicted_segments, list)
         self.assertEqual(len(predicted_segments), len(true_segments))
         for idx in range(len(true_segments)):
             self.assertIsInstance(predicted_segments[idx], tuple)
-            self.assertEqual(len(predicted_segments[idx]), 2)
+            self.assertEqual(len(predicted_segments[idx]), 3)
             self.assertAlmostEqual(predicted_segments[idx][0], true_segments[idx][0], delta=1e-6)
             self.assertAlmostEqual(predicted_segments[idx][1], true_segments[idx][1], delta=1e-6)
 
     def test_join_short_segments_to_long_ones_pos08(self):
-        source_segments = [(0.5, 0.6)]
-        true_segments = [(0.5, 0.6)]
+        source_segments = [(0.5, 0.6, '')]
+        true_segments = [(0.5, 0.6, '')]
         predicted_segments = join_short_segments_to_long_ones(source_segments, 1)
         self.assertIsInstance(predicted_segments, list)
         self.assertEqual(len(predicted_segments), len(true_segments))
         for idx in range(len(true_segments)):
             self.assertIsInstance(predicted_segments[idx], tuple)
-            self.assertEqual(len(predicted_segments[idx]), 2)
+            self.assertEqual(len(predicted_segments[idx]), 3)
             self.assertAlmostEqual(predicted_segments[idx][0], true_segments[idx][0], delta=1e-6)
             self.assertAlmostEqual(predicted_segments[idx][1], true_segments[idx][1], delta=1e-6)
 
