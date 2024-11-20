@@ -22,7 +22,7 @@ class Match:
     list1[start1:end1] matches list2[start2:end2]
 
     If self.len1 == self.len2, the fragments may be additionally be marked as
-    equal or not equal (if not equal this is a replacement operation).
+    equal or not equal (if not equal this Match represents a replacement operation).
     """
     start1: int
     end1: int
@@ -57,7 +57,9 @@ class Match:
 @dataclass
 class CorrectionSuggestion:
     """
-    A suggestion to correct some text in some place.
+    A suggestion to correct some text in some place, by replacing `text[start_pos:end_pos]`
+    with `suggestion`. If `start_pos == end_pos`, this is a suggestion to add a text in
+    `start_pos` position.
     """
     start_pos: int
     end_pos: int
@@ -117,11 +119,9 @@ def compare(text1: str, text2: str) -> list[CorrectionSuggestion]:
         new_ops: list[Match] = []
         for match in ops:
             start1, end1, start2, end2 = match.start1, match.end1, match.start2, match.end2
-            if match.is_equal:
-                new_ops.append(Match(start1, end1, start2, end2, is_equal=True))
-            elif match.is_insert or match.is_delete:
-                new_ops.append(Match(start1, end1, start2, end2, is_equal=False))
-            elif match.is_replace:
+            if not match.is_replace:
+                new_ops.append(match)
+            else:
                 if words_close_match(words1[start1].text, words2[start2].text):
                     new_ops.append(Match(start1, start1 + 1, start2, start2 + 1, is_equal=False))
                     if end1 > start1 + 1 or end2 > start2 + 1:
@@ -131,7 +131,7 @@ def compare(text1: str, text2: str) -> list[CorrectionSuggestion]:
                         new_ops.append(Match(start1, end1 - 1, start2, end2 - 1, is_equal=False))
                     new_ops.append(Match(end1 - 1, end1, end2 - 1, end2, is_equal=False))
                 else:
-                    new_ops.append(Match(start1, end1, start2, end2, is_equal=False))
+                    new_ops.append(match)
         orig_ops = ops
         ops = new_ops
         if ops == orig_ops:
