@@ -80,14 +80,15 @@ class TestRussianASR(unittest.TestCase):
         self.assertIsInstance(res, list)
         self.assertEqual(len(res), 1)
         self.assertIsInstance(res[0], tuple)
-        self.assertEqual(len(res[0]), 3)
+        self.assertEqual(len(res[0]), 4)
         self.assertIsInstance(res[0][0], float)
         self.assertIsInstance(res[0][1], float)
         self.assertIsInstance(res[0][2], str)
+        self.assertIsInstance(res[0][3], str)
         self.assertLessEqual(0.0, res[0][0])
         self.assertLess(res[0][0], res[0][1])
         self.assertLessEqual(res[0][1], self.sound.shape[0] / TARGET_SAMPLING_FREQUENCY)
-        predicted_words = list(filter(lambda it: it.isalnum(), wordpunct_tokenize(res[0][2].lower())))
+        predicted_words = list(filter(lambda it: it.isalnum(), wordpunct_tokenize(res[0][3].lower())))
         self.assertEqual(predicted_words, true_words)
 
     def test_recognize_pos02(self):
