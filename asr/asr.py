@@ -167,6 +167,9 @@ def initialize_model_for_speech_segmentation(language: str = 'ru', model_info: O
     and argument `return_timestamps='word'`. In Pisets, only the output timestamps are used, not the
     transcribed speech.
 
+    NOTE: the pipeline should have the ability to process long audios. To achieve this, the method calls
+    the `transformers.pipeline` feactory with arguments `chunk_length_s=10, stride_length_s=(4, 2)`.
+
     Example:
     ```
     import librosa
@@ -450,9 +453,9 @@ def segment_sound(
     """
     Arguments:
     - mono_sound: 1D waveform with rate 16_000 (equals wav_io.TARGET_SAMPLING_FREQUENCY),
-      no shorter than asr.MIN_SOUND_LENGTH.
-    - segmenter: an AutomaticSpeechRecognitionPipeline that can return word timestamps. See
-      `initialize_model_for_speech_segmentation` for details.
+      possibly very long, and no shorter than asr.MIN_SOUND_LENGTH.
+    - segmenter: an AutomaticSpeechRecognitionPipeline that can process long audios and
+      returns word timestamps. See `initialize_model_for_speech_segmentation` for details.
     - min_segment_size: see below
     - max_segment_size: see below
     - indent_for_silence: see below
@@ -590,19 +593,21 @@ def transcribe(
     max_segment_size: float
 ) -> List[Tuple[float, float, str]]:
     """
-   1) Processes a sound with `segmenter`
-   2) Adds padding around each segment
-   3) Merges short segments into longer ones
-   4) Applies `voice_activity_detector` to filter out non-speech segments
-   5) Applies `asr` to obtain final transcriptions for each segment
-   6) Removes oscillatory hallucinations from the final transcriptions
-   7) Returns only the segments with non-empty resulting transcriptions
+    Transcribes a (possibly long) audio as follows:
+
+    1) Processes the whole sound with `segmenter`
+    2) Adds padding around each segment
+    3) Merges short segments into longer ones
+    4) Applies `voice_activity_detector` to filter out non-speech segments
+    5) Applies `asr` to obtain final transcriptions for each segment
+    6) Removes oscillatory hallucinations from the final transcriptions
+    7) Returns only the segments with non-empty resulting transcriptions
 
     Arguments:
     - mono_sound: 1D waveform with rate 16_000 (equals wav_io.TARGET_SAMPLING_FREQUENCY),
       no shorter than asr.MIN_SOUND_LENGTH.
-    - segmenter: an AutomaticSpeechRecognitionPipeline that can return word timestamps. See
-      `initialize_model_for_speech_segmentation` for details.
+    - segmenter: an AutomaticSpeechRecognitionPipeline that can process long audios and
+      returns word timestamps. See `initialize_model_for_speech_segmentation` for details.
     - voice_activity_detector: an AudioClassificationPipeline that can classify audios. See
       `initialize_model_for_speech_classification` for details.
     - asr: an AutomaticSpeechRecognitionPipeline that can return transcriptions. See
