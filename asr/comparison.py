@@ -33,6 +33,7 @@ class Match:
     is_equal: bool
 
     def __post_init__(self):
+        assert self.len1 > 0 or self.len2 > 0
         if self.is_equal:
             assert self.len1 == self.len2
 
