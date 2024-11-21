@@ -78,9 +78,9 @@ def compare(text1: str, text2: str) -> list[CorrectionSuggestion]:
     - text2: another ASR prediction
     
     Returns a list of suggestions to replace, delete or insert something in the `text1`,
-    based on the difference between both texts. So, this function is not symmetric,
+    based on the difference between both texts. Thus, this function is not symmetric,
     since output suggestions contain positions in the `text1`. Punctuation is not compared,
-    so the punctiation from `text2` is knever used.
+    which means that the punctiation from `text2` is never used.
 
     Example:
     ```
