@@ -8,6 +8,8 @@ def text_to_words(text: str) -> tuple[list[razdel.substring.Substring], list[boo
     Accepts a text, returns a list of tokens, where each token is either a word,
     or a punctuation mark. Additionally returns a boolean mask: is each token a
     punctuation mark? (True if does not contain alnum characters)
+
+    Tested for Ru and En languages.
     """
     tokens = list(razdel.tokenize(text))
     for t in tokens:
