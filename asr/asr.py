@@ -599,7 +599,7 @@ def recognize_sounds(sounds: List[np.ndarray], recognizer: Pipeline) -> List[str
             raise ValueError(err_msg)
 
     all_transcriptions = []
-    for cur_sound in tqdm(sounds):
+    for cur_sound in sounds: # tqdm(sounds):
         all_transcriptions.append(recognizer(cur_sound)['text'])
         gc.collect()
         torch.cuda.empty_cache()
@@ -642,6 +642,9 @@ def transcribe(
 
     Example:
     ```
+    from wav_io.wav_io import load_sound
+    from asr.asr import *
+
     waveform = load_sound('tests/testdata/mono_sound.wav')
     segmenter = initialize_model_for_speech_segmentation()
     vad = initialize_model_for_speech_classification()
