@@ -147,10 +147,13 @@ async def transcribe():
 
 
 async def create_result_file(input_sound, segmenter, vad, asr, task_id):
-    texts_with_timestamps = transcribe_speech(input_sound, segmenter, vad, asr, MIN_FRAME_SIZE, MAX_FRAME_SIZE)
+    segment_transcriptions = transcribe_speech(input_sound, segmenter, vad, asr, MIN_FRAME_SIZE, MAX_FRAME_SIZE)
     output_filename = task_id + '.docx'
     doc = Document()
-    for start_time, end_time, text_from_segmenter, text_final in texts_with_timestamps:
+    for segment_transcription in segment_transcriptions:
+        start_time = segment_transcription.start
+        end_time = segment_transcription.end
+        text_final = segment_transcription.transcription
         line = f'{start_time:.2f} - {end_time:.2f} - {text_final}'
         doc.add_paragraph(line)
         doc.add_paragraph('')

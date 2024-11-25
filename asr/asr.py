@@ -1,4 +1,5 @@
 import copy
+from dataclasses import dataclass
 import gc
 import logging
 from typing import List, Optional, Tuple, Union
@@ -8,6 +9,7 @@ import numpy as np
 from tqdm import tqdm
 import torch
 from transformers import pipeline, Pipeline
+from scipy.signal import resample_poly
 
 from utils.utils import time_to_str
 from wav_io.wav_io import TARGET_SAMPLING_FREQUENCY
@@ -577,7 +579,7 @@ def is_speech(sound: np.ndarray, classifier: Pipeline) -> bool:
     return contains_speech
 
 
-def recognize_sounds(sounds: List[np.ndarray], recognizer: Pipeline) -> List[str]:
+def recognize_sounds(sounds: List[np.ndarray], recognizer: Pipeline, stretch: tuple[int, int] | None = None) -> List[str]:
     """
     Arguments:
     - mono_sound: a list of 1D waveforms with rate 16_000 (equals wav_io.TARGET_SAMPLING_FREQUENCY)
@@ -599,12 +601,22 @@ def recognize_sounds(sounds: List[np.ndarray], recognizer: Pipeline) -> List[str
             raise ValueError(err_msg)
 
     all_transcriptions = []
-    for cur_sound in sounds: # tqdm(sounds):
+    for cur_sound in tqdm(sounds):
         all_transcriptions.append(recognizer(cur_sound)['text'])
         gc.collect()
         torch.cuda.empty_cache()
     return [remove_oscillatory_hallucinations(it) for it in all_transcriptions]
 
+@dataclass
+class TranscribedSegment:
+    """
+    A transcribed segment. See `.transcribe()` function for details.
+    """
+    start: float
+    end: float
+    transcription: str
+    transcription_from_segmenter: str | None = None
+    transcription_stretched: str | None = None
 
 def transcribe(
     mono_sound: np.ndarray,
@@ -612,8 +624,9 @@ def transcribe(
     voice_activity_detector: Pipeline,
     asr: Pipeline,
     min_segment_size: float,
-    max_segment_size: float
-) -> List[Tuple[float, float, str, str]]:
+    max_segment_size: float,
+    stretch: tuple[int, int] | None = None,
+) -> List[TranscribedSegment]:
     """
     Transcribes a (possibly long) audio as follows:
 
@@ -636,9 +649,15 @@ def transcribe(
       `initialize_model_for_speech_recognition` for details.
     - min_segment_size: a parameter for segment processing, see `segment_sound` for details.
     - max_segment_size: a parameter for segment processing, see `segment_sound` for details.
+    - stretch: if specified, stretches each segment in `stretch[1]/stretch[0]` times and perform an
+      additional speech recognition with `asr` pipeline. The results are returned in
+      `.transcription_stretched` field of `TranscribedSegment`.
 
-    Output: a list of tuples (start_time, end_time, transcription_from_segmenter, transcription)
-    for all found utterances, can be empty.
+    Output: a list of `TranscribedSegment` for all found utterances, can be empty:
+    - `.transcription`: a transcription from `asr` Pipeline.
+    - `.transcription_from_segmenter`: a transcription from `segmenter` Pipeline.
+    - `.transcription_stretched`: a transcription of stretched segment from `asr` Pipeline
+      (if `stretch` agument is provided)
 
     Example:
     ```
@@ -648,39 +667,46 @@ def transcribe(
     waveform = load_sound('tests/testdata/mono_sound.wav')
     segmenter = initialize_model_for_speech_segmentation()
     vad = initialize_model_for_speech_classification()
-    asr = initialize_model_for_speech_recognition('ru', 'openai/whisper-tiny')
-    results = transcribe(waveform, segmenter, vad, asr, min_segment_size=1, max_segment_size=5)
+    asr = initialize_model_for_speech_recognition('ru', 'openai/whisper-large-v3')
+    results = transcribe(waveform, segmenter, vad, asr, min_segment_size=1, max_segment_size=5, stretch=(3, 4))
     print(results)
 
     >>> [
-        (
-            0.0,
-            4.18,
-            'она советовала нам отнестись посему предмету к одному почтенному мужу',
-            'Она советовала нам отнести и спасену предмету к одному почтиному мужу.'
+        TranscribedSegment(
+            start=0.0,
+            end=4.18,
+            transcription='она советовала нам отнестись посему предмету к одному почтенному мужу',
+            transcription_from_segmenter='Она советовала нам отнестись по всему предмету к одному почтенному мужу.',
+            transcription_stretched='Она советовала нам отнестись по всему предмету к одному почтенному мужу.'
         ),
-        (
-            4.18,
-            6.8100000000000005,
-            'бывшему другам ивану переселые годы',
-            'Большому другому и вану переселший годы.'
+        TranscribedSegment(
+            start=4.18,
+            end=6.8100000000000005,
+            transcription='бывшему другам ивану переселые годы',
+            transcription_from_segmenter='бывшему другом Ивану Петровичу.',
+            transcription_stretched='Бывшему другом Ивану Петровичу.'
         ),
-        (
-            6.8100000000000005,
-            11.28,
-            'счастливые дни как вешние воды промчались они',
-            'счастливые дни, как вешные воды, промчались они.'
+        TranscribedSegment(
+            start=6.8100000000000005,
+            end=11.28,
+            transcription='счастливые дни как вешние воды промчались они',
+            transcription_from_segmenter='Счастливые дни, как вешние воды, промчались они.',
+            transcription_stretched='Счастливые дни, как вешние воды, промчались они.'
         )
     ]
 
-    from asr.comparison import compare, visualize_correction_suggestions
+    from asr.comparison import MultipleTextsAlignment, visualize_correction_suggestions
 
-    for start, end, text_from_segmenter, text in results:
-        print(visualize_correction_suggestions(text, compare(text, text_from_segmenter)))
+    for result in results:
+        suggestions = MultipleTextsAlignment.from_strings(
+            result.transcription,
+            result.transcription_stretched
+        ).get_correction_suggestions()
+        print(visualize_correction_suggestions(result.transcription, suggestions))
 
-    >>> Она советовала нам {отнести|отнестись} {и спасену|посему} предмету к одному {почтиному|почтенному}{+} мужу.
-    {Большому другому и вану переселший|бывшему другам ивану переселые} годы.
-    счастливые дни, как {вешные|вешние}{+} воды, промчались они.
+    >>> она советовала нам отнестись {посему|по всему} предмету к одному почтенному мужу
+    бывшему {другам|другом} ивану {переселые годы|Петровичу}
+    счастливые дни как вешние воды промчались они
     ```
 
     TODO when calling `voice_activity_detector` and `asr`, process all segments at once as
@@ -735,14 +761,22 @@ def transcribe(
         return []
     recognized_transcriptions = recognize_sounds(
         sounds=sounds_with_speech,
-        recognizer=asr
+        recognizer=asr,
     )
-    del sounds_with_speech
-    results = list(filter(
-        lambda it2: len(it2[2]) > 0,
-        map(
-            lambda it: (it[0][0], it[0][1], it[0][2], it[1].strip()),
-            zip(segments_with_speech, recognized_transcriptions)
+    results = [
+        TranscribedSegment(start, end, transcription_from_segmenter.strip(), transcription.strip())
+        for (start, end, transcription_from_segmenter), transcription
+        in zip(segments_with_speech, recognized_transcriptions)
+        if len(transcription.strip()) > 0
+    ]
+    if stretch is not None:
+        transcriptions_stretched = recognize_sounds(
+            sounds=[
+                resample_poly(sound, up=stretch[0], down=stretch[1])
+                for sound in sounds_with_speech
+            ],
+            recognizer=asr,
         )
-    ))
+        for result, t in zip(results, transcriptions_stretched):
+            result.transcription_stretched = t
     return results
