@@ -764,7 +764,7 @@ def transcribe(
         recognizer=asr,
     )
     results = [
-        TranscribedSegment(start, end, transcription_from_segmenter.strip(), transcription.strip())
+        TranscribedSegment(start, end, transcription.strip(), transcription_from_segmenter.strip())
         for (start, end, transcription_from_segmenter), transcription
         in zip(segments_with_speech, recognized_transcriptions)
         if len(transcription.strip()) > 0

@@ -77,7 +77,7 @@ class TestEnglishASR(unittest.TestCase):
             max_segment_size=5
         )
         true_words = ['neural', 'networks', 'are', 'good']
-        predicted_text = ' '.join([r.transcription for r in res])
+        predicted_text = ' '.join([r.transcription for r in res]).lower()
         self.assertEqual(len(res), 1)
         self.assertLessEqual(0.0, res[0].start)
         self.assertLess(res[0].start, res[0].end)
