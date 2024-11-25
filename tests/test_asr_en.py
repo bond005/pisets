@@ -77,18 +77,12 @@ class TestEnglishASR(unittest.TestCase):
             max_segment_size=5
         )
         true_words = ['neural', 'networks', 'are', 'good']
-        self.assertIsInstance(res, list)
+        predicted_text = ' '.join([r.transcription for r in res])
         self.assertEqual(len(res), 1)
-        self.assertIsInstance(res[0], tuple)
-        self.assertEqual(len(res[0]), 4)
-        self.assertIsInstance(res[0][0], float)
-        self.assertIsInstance(res[0][1], float)
-        self.assertIsInstance(res[0][2], str)
-        self.assertIsInstance(res[0][3], str)
-        self.assertLessEqual(0.0, res[0][0])
-        self.assertLess(res[0][0], res[0][1])
-        self.assertLessEqual(res[0][1], self.sound.shape[0] / TARGET_SAMPLING_FREQUENCY)
-        predicted_words = list(filter(lambda it: it.isalnum(), wordpunct_tokenize(res[0][3].lower())))
+        self.assertLessEqual(0.0, res[0].start)
+        self.assertLess(res[0].start, res[0].end)
+        self.assertLessEqual(res[0].end, self.sound.shape[0] / TARGET_SAMPLING_FREQUENCY)
+        predicted_words = list(filter(lambda it: it.isalnum(), wordpunct_tokenize(predicted_text)))
         self.assertEqual(predicted_words, true_words)
 
     def test_recognize_pos02(self):

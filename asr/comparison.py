@@ -391,8 +391,8 @@ class MultipleTextsAlignment:
             match_score = MultipleTextsAlignment._string_match_score(op_words1, op_words2)
             next_match_score = MultipleTextsAlignment._string_match_score(next_op_words1, next_op_words2)
             joint_match_score = MultipleTextsAlignment._string_match_score(
-                op_words1 + ' ' + next_op_words1,
-                op_words2 + ' ' + next_op_words2
+                (op_words1 + ' ' + next_op_words1).strip(),
+                (op_words2 + ' ' + next_op_words2).strip()
             )
 
             if joint_match_score > max(match_score, next_match_score):
