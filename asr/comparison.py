@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 import difflib
 import razdel
@@ -109,6 +110,7 @@ class WordLevelMatch:
     def is_delete(self) -> bool:
         return self.len2 == 0
 
+
 @dataclass
 class MultipleTextsAlignment:
     """
@@ -199,6 +201,21 @@ class MultipleTextsAlignment:
 
     >>> '{Aaaa} aa, {bb-bb|bbbb} {+cc cc}'
     ```
+
+    NOTE: while this class keeps a list of `WordLevelMatch`, and each match `m` may be one of
+    `m.is_equal`, `m.is_delete`, `m.is_insert` or `m.is_replace`, they do not directly correspond
+    one-to-one to "delete", "insert" and "replace" operations in Word Error Rate (WER) metric.
+    Example:
+
+    ```
+    print(MultipleTextsAlignment.from_strings('a b c', 'd e').matches)
+
+    >>> [WordLevelMatch(start1=0, end1=3, start2=0, end2=2, is_equal=False)]
+    ```
+
+    We can see a single "replace" operation from 3 words to 2 words. However, in WER metric this
+    will be considered as two "replace" and one "delete" operation. To calculate WER correctly,
+    use `.wer` property.
     """
     text1: TokenizedText
     text2: TokenizedText
@@ -215,7 +232,40 @@ class MultipleTextsAlignment:
             )
         )
 
-    # def get_character_alignment(self) -> 
+    def wer(self, max_insertions: int | None = 4) -> float:
+        """
+        Calculates WER. `max_insertions` allows to make WER more robust by not penalizing
+        too much insertions in a row (usually an oscillatory hallucinations of ASR model).
+
+        TODO switch to n unique insertions
+        """
+        _max_insertions = float('inf') if max_insertions is None else max_insertions
+        
+        n_equal = sum([m.len1 for m in self.matches if m.is_equal])
+        n_deletions = sum([m.len1 for m in self.matches if m.is_delete])
+        n_insertions = sum([min(m.len2, _max_insertions) for m in self.matches if m.is_insert])
+        n_replacements = 0
+
+        # replace operations contrubute to n_deletions and n_insertions if len1 != len2
+        for match in self.matches:
+            if match .is_replace:
+                if match.len1 > match.len2:
+                    n_replacements += match.len2
+                    n_deletions += match.len1 - match.len2
+                elif match.len1 < match.len2:
+                    n_replacements += match.len1
+                    n_insertions += min(match.len2 - match.len1, _max_insertions)
+                else:
+                    n_replacements += match.len1
+        
+        if max_insertions is None:
+            assert n_equal + n_deletions + n_replacements == len(self.text1.get_words())
+            assert n_equal + n_insertions + n_replacements == len(self.text2.get_words())
+
+        return (
+            (n_deletions + n_insertions + n_replacements)
+            / (n_equal + n_deletions + n_replacements)
+        )
     
     @staticmethod
     def get_matches(
@@ -260,54 +310,6 @@ class MultipleTextsAlignment:
             ops = [op for op in ops if not op.is_equal]
 
         return ops
-
-    def get_correction_suggestions(self) -> list[CorrectionSuggestion]:
-        """
-        Returns a list of suggestions to replace, delete or insert something in the `text1`,
-        based on the difference between both texts. Thus, this function is not symmetric,
-        since output suggestions contain positions in the `text1`. Punctuation is not compared,
-        which means that the punctiation from `text2` is never used.
-        """
-        words1 = self.text1.get_words()
-        words2 = self.text2.get_words()
-        diffs = [op for op in self.matches if not op.is_equal]
-
-        # get the positions in the original text, convert to correction suggestions
-        suggestions: list[CorrectionSuggestion] = []
-
-        for diff in diffs:
-            # position
-            if diff.start1 != diff.end1:
-                text1_start_pos = words1[diff.start1].start
-                text1_end_pos = words1[diff.end1 - 1].stop
-            else:
-                # suggestion to add
-                if diff.end1 > 0:
-                    add_mode = 'append'
-                    pos = words1[diff.end1 - 1].stop
-                else:
-                    add_mode = 'prepend'
-                    pos = words1[diff.end1].start
-                text1_start_pos = pos
-                text1_end_pos = pos
-            
-            # suggestion
-            if diff.start2 == diff.end2:
-                suggestion = ''
-            else:
-                text2_start_idx = words2[diff.start2].start
-                text2_end_idx = words2[diff.end2 - 1].stop
-                suggestion = self.text2.text[text2_start_idx:text2_end_idx]
-                if diff.start1 == diff.end1:
-                    # suggestion to add
-                    if add_mode == 'append':
-                        suggestion = ' ' + suggestion
-                    elif add_mode == 'prepend':
-                        suggestion = suggestion + ' '
-            
-            suggestions.append(CorrectionSuggestion(text1_start_pos, text1_end_pos, suggestion))
-
-        return suggestions
     
     @staticmethod
     def _string_match_score(word1: str, word2: str) -> float:
@@ -405,18 +407,28 @@ class MultipleTextsAlignment:
             
         return new_ops, (ops != new_ops)
 
-@dataclass
-class CorrectionSuggestion:
+def filter_correction_suggestions(alignment: MultipleTextsAlignment) -> list[WordLevelMatch]:
     """
-    A suggestion to correct some text in some place, by replacing `text[start_pos:end_pos]`
-    with `suggestion`. If `start_pos == end_pos`, this is a suggestion to add a text in
-    `start_pos` position.
-    """
-    start_pos: int
-    end_pos: int
-    suggestion: str
+    Arguments:
+    - alignment: a `MultipleTextsAlignment` between base speech recognition predictions and
+    additional predictions from another model.
 
-def visualize_correction_suggestions(text: str, suggestions: list[CorrectionSuggestion]) -> str:
+    Outputs:
+    - list of all non-equal matches, filtered by several heuristics.
+    
+    The output is treated as suggestions to replace, delete or insert something in the `text1`,
+    based on the difference between words in both texts. Punctuation is not compared, since
+    `MultipleTextsAlignment` ignores punctuation.
+    """
+    diffs = [op for op in alignment.matches if not op.is_equal]
+
+    return diffs
+
+
+def visualize_correction_suggestions(
+    alignment: MultipleTextsAlignment,
+    diffs: list[WordLevelMatch],
+) -> str:
     """
     Visualize suggestions in {brackets}.
     - {aaa|bbb} - suggest to replace aaa to bbb
@@ -428,24 +440,80 @@ def visualize_correction_suggestions(text: str, suggestions: list[CorrectionSugg
     ```
     text1 = 'она советовала нам отнестись посему предмету к одному почтенному мужу'
     text2 = 'Она советовала нам отнести и спасену предмету к одному почтиному мужу.'
-    suggestions = compare(text1, text2)
-    print(visualize_correction_suggestions(text1, suggestions))
+    alignment = MultipleTextsAlignment.from_strings(text1, text2)
+    suggestions = filter_correction_suggestions(alignment)
+    print(visualize_correction_suggestions(alignment, suggestions))
 
     >>> 'она советовала нам {отнестись|отнести} {+и} {посему|спасену} предмету к одному {почтенному|почтиному} мужу'
     ```
     """
-    if len(suggestions) == 0:
-        return text
+    text1 = alignment.text1.text
+    words1 = alignment.text1.get_words()
+
+    text2 = alignment.text2.text
+    words2 = alignment.text2.get_words()
+
+    if len(diffs) == 0:
+        return text1
     
+    # determining character positions in the original text
+
+    @dataclass
+    class CorrectionSuggestion:
+        """
+        A suggestion to correct some text in some place, by replacing `text[start_pos:end_pos]`
+        with `suggestion`. If `start_pos == end_pos`, this is a suggestion to add a text in
+        `start_pos` position.
+        """
+        start_pos: int
+        end_pos: int
+        suggestion: str
+
+    suggestions: list[CorrectionSuggestion] = []
+
+    for diff in diffs:
+        # calculate position
+        if diff.start1 != diff.end1:
+            text1_start_pos = words1[diff.start1].start
+            text1_end_pos = words1[diff.end1 - 1].stop
+        else:
+            # suggestion to add
+            if diff.end1 > 0:
+                add_mode = 'append'
+                pos = words1[diff.end1 - 1].stop
+            else:
+                add_mode = 'prepend'
+                pos = words1[diff.end1].start
+            text1_start_pos = pos
+            text1_end_pos = pos
+        
+        # suggestion
+        if diff.start2 == diff.end2:
+            suggestion = ''
+        else:
+            text2_start_idx = words2[diff.start2].start
+            text2_end_idx = words2[diff.end2 - 1].stop
+            suggestion = text2[text2_start_idx:text2_end_idx]
+            if diff.start1 == diff.end1:
+                # suggestion to add
+                if add_mode == 'append':
+                    suggestion = ' ' + suggestion
+                elif add_mode == 'prepend':
+                    suggestion = suggestion + ' '
+        
+        suggestions.append(CorrectionSuggestion(text1_start_pos, text1_end_pos, suggestion))
+    
+    # render the result
+
     result = ''
     for i, suggestion in enumerate(suggestions):
         start = suggestion.start_pos
         end = suggestion.end_pos
         prev_end = suggestions[i - 1].end_pos if i > 0 else None
 
-        result += text[prev_end:start]
+        result += text1[prev_end:start]
 
-        hypothesis1 = text[start:end]
+        hypothesis1 = text1[start:end]
         hypothesis2 = suggestion.suggestion
         if len(hypothesis1) == 0:
             # suggestion to add
@@ -463,6 +531,6 @@ def visualize_correction_suggestions(text: str, suggestions: list[CorrectionSugg
         
         result += visualized_suggestion
     
-    result += text[end:]
+    result += text1[end:]
 
     return result
