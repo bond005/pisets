@@ -289,11 +289,19 @@ def initialize_model_for_speech_recognition(language: str = 'ru', model_info: Op
         else:
             model_name = 'openai/whisper-large-v3'
     try:
+        pipeline_kwargs = {}
+        if 'whisper' in model_name.lower():
+            if language == 'ru':
+                pipeline_kwargs['generate_kwargs'] = {'language': '<|ru|>', 'task': 'transcribe'}
+            elif language == 'en':
+                pipeline_kwargs['generate_kwargs'] = {'language': '<|en|>', 'task': 'transcribe'}
+        
         if torch.cuda.is_available():
             recognizer = pipeline(
                 'automatic-speech-recognition', model=model_name,
                 chunk_length_s=20, stride_length_s=(4, 2),
-                device='cuda:0', model_kwargs={'attn_implementation': 'sdpa'}, torch_dtype=torch.float16
+                device='cuda:0', model_kwargs={'attn_implementation': 'sdpa'}, torch_dtype=torch.float16,
+                **pipeline_kwargs
             )
         else:
             recognizer = pipeline(
