@@ -3,7 +3,11 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass
 import difflib
+from typing import Iterable, Literal
+import numpy as np
 import razdel
+from pymystem3 import Mystem
+from tqdm.auto import tqdm
 
 @dataclass
 class Substring:
@@ -56,7 +60,10 @@ class TokenizedText:
         return [t for t in self.tokens if not t.is_punct]
 
     @classmethod
-    def from_text(cls, text: str) -> TokenizedText:
+    def from_text(cls, text: str, dash_as_separator: bool = True) -> TokenizedText:
+        orig_text = text
+        if dash_as_separator:
+            text = text.replace('-', ' ')
         tokens = [
             Substring(
                 start=t.start,
@@ -66,7 +73,7 @@ class TokenizedText:
             )
             for t in razdel.tokenize(text)
         ]
-        return TokenizedText(text=text, tokens=tokens)
+        return TokenizedText(text=orig_text, tokens=tokens)
 
 @dataclass
 class WordLevelMatch:
@@ -84,6 +91,11 @@ class WordLevelMatch:
     start2: int
     end2: int
     is_equal: bool
+
+    char_start1: int | None = None
+    char_end1: int | None = None
+    char_start2: int | None = None
+    char_end2: int | None = None
 
     def __post_init__(self):
         assert self.len1 > 0 or self.len2 > 0
@@ -228,11 +240,21 @@ class MultipleTextsAlignment:
             text2=(tokenized_text_2 := TokenizedText.from_text(text2)),
             matches=MultipleTextsAlignment.get_matches(
                 tokenized_text_1.get_words(),
-                tokenized_text_2.get_words()
+                tokenized_text_2.get_words(),
             )
         )
 
-    def wer(self, max_insertions: int | None = 4) -> float:
+    def get_uncertainty_mask(self) -> np.ndarray:
+        is_certain = np.full(len(self.text1.get_words()), False)
+        for match in self.matches:
+            is_certain[match.start1:match.end1] = match.is_equal
+        return ~is_certain
+
+    def wer(
+        self,
+        max_insertions: int | None = 4,
+        uncertainty_mask: np.ndarray = None,
+    ) -> dict:
         """
         Calculates WER. `max_insertions` allows to make WER more robust by not penalizing
         too much insertions in a row (usually an oscillatory hallucinations of ASR model).
@@ -240,6 +262,9 @@ class MultipleTextsAlignment:
         TODO switch to n unique insertions
         """
         _max_insertions = float('inf') if max_insertions is None else max_insertions
+
+        words1 = self.text1.get_words()
+        words2 = self.text2.get_words()
         
         n_equal = sum([m.len1 for m in self.matches if m.is_equal])
         n_deletions = sum([m.len1 for m in self.matches if m.is_delete])
@@ -248,7 +273,7 @@ class MultipleTextsAlignment:
 
         # replace operations contrubute to n_deletions and n_insertions if len1 != len2
         for match in self.matches:
-            if match .is_replace:
+            if match.is_replace:
                 if match.len1 > match.len2:
                     n_replacements += match.len2
                     n_deletions += match.len1 - match.len2
@@ -258,14 +283,43 @@ class MultipleTextsAlignment:
                 else:
                     n_replacements += match.len1
         
+        assert n_equal + n_deletions + n_replacements == len(words1)
         if max_insertions is None:
-            assert n_equal + n_deletions + n_replacements == len(self.text1.get_words())
-            assert n_equal + n_insertions + n_replacements == len(self.text2.get_words())
+            assert n_equal + n_insertions + n_replacements == len(words2)
 
-        return (
-            (n_deletions + n_insertions + n_replacements)
-            / (n_equal + n_deletions + n_replacements)
-        )
+        results = {'wer': (n_deletions + n_insertions + n_replacements) / len(words1)}
+
+        if uncertainty_mask is not None:
+            assert len(uncertainty_mask) == len(words2)
+            uncertainty_mask = uncertainty_mask.astype(bool)
+
+            certain_n_correct = 0
+            certain_n_incorrect = 0
+            uncertain_n_correct = 0
+            uncertain_n_incorrect = 0
+
+            for match in self.matches:
+                mask = uncertainty_mask[match.start2:match.end2]
+                if match.is_equal:
+                    uncertain_n_correct += mask.sum()
+                    certain_n_correct += (~mask).sum()
+                elif (match.is_insert or match.is_replace):
+                    uncertain_n_incorrect += mask.sum()
+                    certain_n_incorrect += (~mask).sum()
+
+        if uncertainty_mask is not None:
+            results['certain_n_correct'] = certain_n_correct
+            results['certain_n_incorrect'] = certain_n_incorrect
+            results['uncertain_n_correct'] = uncertain_n_correct
+            results['uncertain_n_incorrect'] = uncertain_n_incorrect
+            results['certain_correctness_ratio'] = (
+                certain_n_correct / (certain_n_correct + certain_n_incorrect)
+            )
+            results['uncertain_correctness_ratio'] = (
+                uncertain_n_correct / (uncertain_n_correct + uncertain_n_incorrect)
+            )
+
+        return results
     
     @staticmethod
     def get_matches(
@@ -309,8 +363,28 @@ class MultipleTextsAlignment:
             # consider only non-equal matches
             ops = [op for op in ops if not op.is_equal]
 
+        # set character positions for each WordLevelMatch
+        for op in ops:
+            if op.start1 != op.end1:
+                op.char_start1 = words1[op.start1].start
+                op.char_end1 = words1[op.end1 - 1].stop
+            else:
+                if op.end1 > 0:
+                    op.char_start1 = op.char_end1 = words1[op.end1 - 1].stop
+                else:
+                    op.char_start1 = op.char_end1 = words1[op.end1].start
+
+            if op.start2 != op.end2:
+                op.char_start2 = words2[op.start2].start
+                op.char_end2 = words2[op.end2 - 1].stop
+            else:
+                if op.end2 > 0:
+                    op.char_start2 = op.char_end2 = words2[op.end2 - 1].stop
+                else:
+                    op.char_start2 = op.char_end2 = words2[op.end2].start
+
         return ops
-    
+
     @staticmethod
     def _string_match_score(word1: str, word2: str) -> float:
         """
@@ -406,131 +480,196 @@ class MultipleTextsAlignment:
                 i += 1
             
         return new_ops, (ops != new_ops)
+    
+    def substitute(
+        self,
+        replace: Iterable[int] | None = None,
+        show_in_braces: Iterable[int] | None = None,
+        pref_first: Iterable[int] | None = None,
+        pref_second: Iterable[int] | None = None,
+    ) -> str:
+        """
+        This function can insert fragments from the second text to the first text,
+        based on matches.
 
-def filter_correction_suggestions(alignment: MultipleTextsAlignment) -> list[WordLevelMatch]:
+        Explanation. Let we have a `MultipleTextsAlignment` with a single non-equal match
+        (difference):
+
+        ```
+        text1 = "aa bb! cc!"
+        text2 = "aa bbb cc"
+        al = MultipleTextsAlignment.from_strings(text1, text2)
+        print([m for m in al.matches if not m.is_equal])
+        >>> [WordLevelMatch(start1=1, end1=2, start2=1, end2=2, is_equal=False,
+            char_start1=3, char_end1=5, char_start2=3, char_end2=6)]
+        ```
+        
+        The difference `m = al.matches[1]` corresponds to a substring in both texts:
+        1) A segment in the 1st test: `al.text1.text[m.char_start1:m.char_end1] == 'bb'`
+        2) A segment in the 2nd text: `al.text2.text[m.char_start2:m.char_end2] == 'bbb'`.
+        
+        Based on this, we can cut out the segment from the 1st text, and replace it
+        with the segment from the 2nd text. This is exactly what does the `substitute` method.
+        The `replace` argument is a list of all differences to apply.
+
+        ```
+        print(al.substitute(replace=[1]))
+        >>> "aa bbb! cc!"
+        ```
+        
+        The `show_in_braces` is also a list of differences. It does not replace text parts, but
+        visualize both variants in {braces}.
+        - {aaa|bbb} - suggest to replace aaa to bbb
+        - {aaa} - suggest to remove aaa
+        - {+aaa} - suggest to insert aaa (not present in `text1`)
+
+        ```
+        text1 = 'она советовала нам отнестись посему предмету к одному почтенному мужу'
+        text2 = 'Она советовала нам отнести и спасену предмету к одному почтиному мужу.'
+        al = MultipleTextsAlignment.from_strings(text1, text2)
+        al.substitute(show_in_braces=range(len(al.matches)))
+        >>> 'она советовала нам {отнестись|отнести} {+и} {посему|спасену} предмету к одному {почтенному|почтиному} мужу'
+        ```
+        """
+        text1 = self.text1.text
+        text2 = self.text2.text
+
+        replace = list(replace) if replace is not None else []
+        show_in_braces = list(show_in_braces) if show_in_braces is not None else []
+
+        pref_first = list(pref_first) if pref_first is not None else []
+        pref_second = list(pref_second) if pref_second is not None else []
+        # assert set(pref_first).intersection(set(pref_second)) == set()
+
+        result = ''
+        text1_idx = 0
+
+        for op_idx, op in enumerate(self.matches):
+            if op.is_equal:
+                continue
+
+            result += text1[text1_idx:op.char_start1]
+            text1_idx = op.char_start1
+
+            segment1 = text1[op.char_start1:op.char_end1]
+            segment2 = text2[op.char_start2:op.char_end2]
+
+            if op_idx in replace:
+                fragment = segment2
+                
+            elif op_idx in show_in_braces:
+                if len(segment1) == 0:
+                    formatting = 'add'
+                elif len(segment2) == 0:
+                    formatting = 'remove'
+                else:
+                    formatting = 'correct'
+                
+                if op_idx in pref_first:
+                    segment1 = '!' + segment1
+                if op_idx in pref_second:
+                    segment2 = '!' + segment2
+
+                if formatting == 'add':
+                    fragment = '{+' + segment2.strip() + '}'
+                    if text1[op.char_start1] == ' ':
+                        fragment = ' ' + fragment
+                    else:
+                        fragment = fragment + ' '
+                elif formatting == 'remove':
+                    fragment = '{' + segment1 + '}'
+                else:
+                    fragment = '{' + segment1 + '|' + segment2 + '}'
+            
+            else:
+                fragment = segment1
+                
+            result += fragment
+            text1_idx = op.char_end1
+        
+        result += text1[text1_idx:]
+
+        return result
+
+
+def _is_junk_word(word: str) -> bool:
+    return word in ['вот', 'ага', 'и', 'а', 'ну', 'это']
+
+def _is_junk_word_sequence(text: str) -> bool:
+    return text in ['то есть', 'да то есть', 'это самое']
+
+def _lemmatize(text: str) -> str:
+    return ''.join(Mystem().lemmatize(text)).strip()  # here we need to join with '', not ' '
+
+def _should_keep(
+    alignment: MultipleTextsAlignment,
+    diff: WordLevelMatch,
+    skip_word_form_change: bool,
+) -> bool:
+    """
+    A single diff variant of .filter_correction_suggestions().
+    """
+    words1: list[str] = [w.text for w in alignment.text1.get_words()[diff.start1:diff.end1]]
+    words2: list[str] = [w.text for w in alignment.text2.get_words()[diff.start2:diff.end2]]
+
+    joined1 = ' '.join(words1).lower().replace('ё', 'е')
+    joined2 = ' '.join(words2).lower().replace('ё', 'е')
+    
+    if all([_is_junk_word(w) for w in words1]) and all([_is_junk_word(w) for w in words2]):
+        # insertion, replacement or deletion of junk words
+        return False
+
+    if (
+        (len(joined1) == 0 or _is_junk_word_sequence(joined1))
+        and (len(joined2) == 0 or _is_junk_word_sequence(joined2))
+    ):
+        # insertion, replacement or deletion of junk words
+        return False
+
+    if diff.is_replace:
+        if joined1 == joined2:
+            # the same text
+            return False
+        if skip_word_form_change and _lemmatize(joined1) == _lemmatize(joined2):
+            # different forms of the same words, skip according to `skip_word_form_change=True`
+            return False
+
+        ru_letters = set('абвгдеёжзийклмнопрстуфхцчшщъыьэюя')
+        has_ru1 = ru_letters & set(joined1) != set()
+        has_ru2 = ru_letters & set(joined2) != set()
+
+        if has_ru1 and not has_ru2:
+            # probably a transliteration or letters-to-digits conversion
+            return False
+        if has_ru2 and not has_ru1:
+            # probably a transliteration or letters-to-digits conversion
+            return False
+    
+    return True
+
+def filter_correction_suggestions(
+    alignment: MultipleTextsAlignment,
+    skip_word_form_change: bool = False
+) -> list[int]:
     """
     Arguments:
     - alignment: a `MultipleTextsAlignment` between base speech recognition predictions and
     additional predictions from another model.
+    - skip_word_form_change: whether to skips word form changes
 
     Outputs:
-    - list of all non-equal matches, filtered by several heuristics.
-    
-    The output is treated as suggestions to replace, delete or insert something in the `text1`,
-    based on the difference between words in both texts. Punctuation is not compared, since
-    `MultipleTextsAlignment` ignores punctuation.
+    - Indices all non-equal matches, filtered by several heuristics. This is treated as
+      suggestions to replace, delete or insert something in the `text1`, based on the
+      difference between words in both texts. Punctuation is not compared, since
+      `MultipleTextsAlignment` ignores punctuation.
+
+    NOTE: currently is adapted for Ru language
     """
-    diffs = [op for op in alignment.matches if not op.is_equal]
-
-    return diffs
-
-
-def visualize_correction_suggestions(
-    alignment: MultipleTextsAlignment,
-    diffs: list[WordLevelMatch],
-) -> str:
-    """
-    Visualize suggestions in {brackets}.
-    - {aaa|bbb} - suggest to replace aaa to bbb
-    - {aaa} - suggest to remove aaa
-    - {+aaa} - suggest to insert aaa (not present in `text`)
-    
-    Example:
-    
-    ```
-    text1 = 'она советовала нам отнестись посему предмету к одному почтенному мужу'
-    text2 = 'Она советовала нам отнести и спасену предмету к одному почтиному мужу.'
-    alignment = MultipleTextsAlignment.from_strings(text1, text2)
-    suggestions = filter_correction_suggestions(alignment)
-    print(visualize_correction_suggestions(alignment, suggestions))
-
-    >>> 'она советовала нам {отнестись|отнести} {+и} {посему|спасену} предмету к одному {почтенному|почтиному} мужу'
-    ```
-    """
-    text1 = alignment.text1.text
-    words1 = alignment.text1.get_words()
-
-    text2 = alignment.text2.text
-    words2 = alignment.text2.get_words()
-
-    if len(diffs) == 0:
-        return text1
-    
-    # determining character positions in the original text
-
-    @dataclass
-    class CorrectionSuggestion:
-        """
-        A suggestion to correct some text in some place, by replacing `text[start_pos:end_pos]`
-        with `suggestion`. If `start_pos == end_pos`, this is a suggestion to add a text in
-        `start_pos` position.
-        """
-        start_pos: int
-        end_pos: int
-        suggestion: str
-
-    suggestions: list[CorrectionSuggestion] = []
-
-    for diff in diffs:
-        # calculate position
-        if diff.start1 != diff.end1:
-            text1_start_pos = words1[diff.start1].start
-            text1_end_pos = words1[diff.end1 - 1].stop
-        else:
-            # suggestion to add
-            if diff.end1 > 0:
-                add_mode = 'append'
-                pos = words1[diff.end1 - 1].stop
-            else:
-                add_mode = 'prepend'
-                pos = words1[diff.end1].start
-            text1_start_pos = pos
-            text1_end_pos = pos
-        
-        # suggestion
-        if diff.start2 == diff.end2:
-            suggestion = ''
-        else:
-            text2_start_idx = words2[diff.start2].start
-            text2_end_idx = words2[diff.end2 - 1].stop
-            suggestion = text2[text2_start_idx:text2_end_idx]
-            if diff.start1 == diff.end1:
-                # suggestion to add
-                if add_mode == 'append':
-                    suggestion = ' ' + suggestion
-                elif add_mode == 'prepend':
-                    suggestion = suggestion + ' '
-        
-        suggestions.append(CorrectionSuggestion(text1_start_pos, text1_end_pos, suggestion))
-    
-    # render the result
-
-    result = ''
-    for i, suggestion in enumerate(suggestions):
-        start = suggestion.start_pos
-        end = suggestion.end_pos
-        prev_end = suggestions[i - 1].end_pos if i > 0 else None
-
-        result += text1[prev_end:start]
-
-        hypothesis1 = text1[start:end]
-        hypothesis2 = suggestion.suggestion
-        if len(hypothesis1) == 0:
-            # suggestion to add
-            visualized_suggestion = '{+' + hypothesis2.strip() + '}'
-            if hypothesis2.startswith(' '):
-                visualized_suggestion = ' ' + visualized_suggestion
-            if hypothesis2.endswith(' '):
-                visualized_suggestion = visualized_suggestion + ' '
-        elif len(hypothesis2) == 0:
-            # suggestion to remove
-            visualized_suggestion = '{' + hypothesis1 + '}'
-        else:
-            # suggestion to correct
-            visualized_suggestion = '{' + hypothesis1 + '|' + hypothesis2 + '}'
-        
-        result += visualized_suggestion
-    
-    result += text1[end:]
-
-    return result
+    return [
+        i for i, op in enumerate(tqdm(alignment.matches, desc='Filtering suggestions'))
+        if not op.is_equal and _should_keep(
+            alignment=alignment,
+            diff=op,
+            skip_word_form_change=skip_word_form_change
+        )
+    ]
