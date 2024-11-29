@@ -16,3 +16,4 @@ tokenizers>=0.19.1
 transformers>=4.41.2
 webrtcvad>=2.0.10
 setuptools
+pymystem3
