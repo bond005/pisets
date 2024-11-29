@@ -292,9 +292,17 @@ def initialize_model_for_speech_recognition(language: str = 'ru', model_info: Op
         pipeline_kwargs = {}
         if 'whisper' in model_name.lower():
             if language == 'ru':
-                pipeline_kwargs['generate_kwargs'] = {'language': '<|ru|>', 'task': 'transcribe'}
+                pipeline_kwargs['generate_kwargs'] = {
+                    'language': '<|ru|>',
+                    'task': 'transcribe',
+                    'forced_decoder_ids': None
+                }
             elif language == 'en':
-                pipeline_kwargs['generate_kwargs'] = {'language': '<|en|>', 'task': 'transcribe'}
+                pipeline_kwargs['generate_kwargs'] = {
+                    'language': '<|en|>',
+                    'task': 'transcribe',
+                    'forced_decoder_ids': None
+                }
         
         if torch.cuda.is_available():
             recognizer = pipeline(
