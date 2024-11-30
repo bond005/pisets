@@ -11,6 +11,26 @@ TARGET_SAMPLING_FREQUENCY = 16_000
 
 
 def load_sound(fname: str) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray], None]:
+    """
+    Loads .wav audio. It should be a mono-channel or two-channel sound with a rate equal to
+    wav_io.TARGET_SAMPLING_FREQUENCY = 16_000.
+
+    Returns:
+    - A waveform array for mono-channel sound
+    - Tuple of two waveform arrays for two-channel sound
+
+    Raises `ValueError` if wrong rate, `wave.Error` if wrong format (maybe more exceptions?).
+
+    In Pisets, this function replaces `librosa.load`, since librosa may have problems when
+    installing on Windows. Since `load_sound` requires a specific format and rate,
+    a file conversion with ffmpeg may be required.
+
+    However, you may consider using an alternative which performs automatic resampling
+    to the required rate, is able to merge channels, and support more extensions:
+    ```
+    librosa.load(filename, mono=True, sr=16_000)
+    ```
+    """
     with wave.open(fname, 'rb') as fp:
         n_channels = fp.getnchannels()
         if n_channels not in {1, 2}:

@@ -19,6 +19,13 @@ asr_logger = logging.getLogger(__name__)
 
 
 def find_repeated_tokens(tokens: List[str], start_pos: int = 0) -> Union[Tuple[int, int], None]:
+    """
+    Accepts a list of strings, usually words. Finds the first occurence of
+    OSCILLATORY_HALLUCINATION_MIN_SIZE or more equal words in `tokens[start_pos:]`.
+    
+    Output: the start (inclusive) and end (exclusive) indices of the found subsequence, or None
+    if no such subsequence is found.
+    """
     token_idx = start_pos
     n_tokens = len(tokens)
     repeated_group_start = -1
@@ -44,6 +51,15 @@ def find_repeated_tokens(tokens: List[str], start_pos: int = 0) -> Union[Tuple[i
 
 
 def find_tokens_in_text(source_text: str, tokens: List[str], start_pos: int = 0) -> Tuple[int, int]:
+    """
+    Arguments:
+    - source_text: a text
+    - tokens: a sequence of lowercase words
+    - start_pos: an index to search from
+
+    Returns start and end positions of the word sequence in the source text, excluding punctuation.
+    Raises RuntimeError if no such positions found.
+    """
     if len(tokens) == 0:
         err_msg = 'The tokens list is empty!'
         asr_logger.error(err_msg)
@@ -55,7 +71,7 @@ def find_tokens_in_text(source_text: str, tokens: List[str], start_pos: int = 0)
     source_text_ = source_text.lower()
     found_idx = source_text_[start_pos:].find(tokens[0])
     if found_idx < 0:
-        err_msg = f'The token {tokens[0]} does not found in the text {source_text}'
+        err_msg = f'The token {tokens[0]} was not found in the text {source_text}'
         asr_logger.error(err_msg)
         raise RuntimeError(err_msg)
     token_start_pos = found_idx + start_pos
@@ -71,7 +87,7 @@ def find_tokens_in_text(source_text: str, tokens: List[str], start_pos: int = 0)
     while not ok:
         found_idx = source_text_[token_end_pos:].find(tokens[0])
         if found_idx < 0:
-            err_msg = f'The token {tokens[0]} does not found in the text {source_text}'
+            err_msg = f'The token {tokens[0]} was not found in the text {source_text}'
             asr_logger.error(err_msg)
             raise RuntimeError(err_msg)
         token_start_pos = found_idx + token_end_pos
@@ -90,6 +106,17 @@ def find_tokens_in_text(source_text: str, tokens: List[str], start_pos: int = 0)
 
 
 def remove_oscillatory_hallucinations(input_transcription: str) -> str:
+    """
+    Searches for a subsequence of OSCILLATORY_HALLUCINATION_MIN_SIZE or more consecutive repetitions
+    of the same word. If found, removes the repetitions. Also strips the input string and performs a
+    space deduplication.
+
+    TODO consider fixing cases when both calls to `find_tokens_in_text` attend to different fragments:
+    ```
+    text = 'What a mess, someone stole the words! A-a-a-a!'
+    remove_oscillatory_hallucinations(text)
+    >>> 'What a-a!'
+    """
     tokens = wordpunct_tokenize(input_transcription.lower())
     tokens_without_punctuation = list(filter(lambda it: it.isalnum(), tokens))
     if len(tokens_without_punctuation) >= OSCILLATORY_HALLUCINATION_MIN_SIZE:
@@ -126,6 +153,41 @@ def check_language(lang: str) -> str:
 
 
 def initialize_model_for_speech_segmentation(language: str = 'ru', model_info: Optional[str] = None) -> Pipeline:
+    """
+    Loads and returns a specified Pipeline to use for speech segmentation.
+    
+    Arguments:
+    - `model_info` can be any Hugging Face model name or path for 'automatic-speech-recognition' pipeline.
+        A reasonable option is 'bond005/wav2vec2-base-ru-birm' (used in tests).
+    - `language` is used only if `model_info` is not provided to load a default pipeline:
+        - for language='ru': 'bond005/wav2vec2-large-ru-golos'
+        - for language='en': 'jonatasgrosman/wav2vec2-large-xlsr-53-english'.
+    
+    Returned value: an AutomaticSpeechRecognitionPipeline, to be called on mono sound with rate 16_000
+    and argument `return_timestamps='word'`. In Pisets, only the output timestamps are used, not the
+    transcribed speech.
+
+    NOTE: the pipeline should have the ability to process long audios. To achieve this, the method calls
+    the `transformers.pipeline` factory with arguments `chunk_length_s=10, stride_length_s=(4, 2)`.
+
+    Example:
+    ```
+    import librosa
+    waveform, _ = librosa.load('tests/testdata/test_sound_ru.wav', sr=None)
+    segmenter = initialize_model_for_speech_segmentation()
+    segmenter(waveform, return_timestamps='word')
+
+    >>> {
+      'text': 'нейронные сети это хорошо',
+      'chunks': [
+        {'text': 'нейронные', 'timestamp': (0.44, 0.98)},
+        {'text': 'сети', 'timestamp': (1.08, 1.32)},
+        {'text': 'это', 'timestamp': (1.7, 1.82)},
+        {'text': 'хорошо', 'timestamp': (1.88, 2.24)}
+      ]
+    }
+    ```
+    """
     if model_info is not None:
         model_name = model_info
     else:
@@ -151,6 +213,32 @@ def initialize_model_for_speech_segmentation(language: str = 'ru', model_info: O
 
 
 def initialize_model_for_speech_classification(model_info: Optional[str] = None) -> Pipeline:
+    """
+    Loads and returns a specified Pipeline to use for voice activity detection (VAD).
+    
+    Arguments:
+    - `model_info` can be any Hugging Face model name or path for 'audio-classification' pipeline.
+      By default, loads 'MIT/ast-finetuned-audioset-10-10-0.4593' (a default VAD for Pisets).
+    
+    Returned value: An AudioClassificationPipeline, to be called on mono sound with rate 16_000 and returns
+    a list of classes. Pisets considers a sound as speech if the top class name contains a word "speech".
+
+    Example:
+    ```
+    import librosa
+    waveform, _ = librosa.load('tests/testdata/test_sound_ru.wav', sr=None)
+    vad = initialize_model_for_speech_classification()
+    vad(waveform)
+
+    >>> [
+      {'score': 0.6382841467857361, 'label': 'Speech'},
+      {'score': 0.024410240352153778, 'label': 'Animal'},
+      {'score': 0.02063129097223282, 'label': 'Inside, small room'},
+      {'score': 0.018520403653383255, 'label': 'Insect'},
+      {'score': 0.01799442060291767, 'label': 'Owl'}
+    ]
+    ```
+    """
     if model_info is not None:
         model_name = model_info
     else:
@@ -171,6 +259,27 @@ def initialize_model_for_speech_classification(model_info: Optional[str] = None)
 
 
 def initialize_model_for_speech_recognition(language: str = 'ru', model_info: Optional[str] = None) -> Pipeline:
+    """
+    Loads and returns a specified Pipeline to use for speech recognition.
+    
+    Arguments:
+    - `model_info` can be any Hugging Face model name or path for 'automatic-speech-recognition' pipeline.
+    - `language` is used only if `model_info` is not provided to load a default pipeline:
+        - for language='ru': 'bond005/whisper-large-v3-ru-podlodka'
+        - for language='en': 'openai/whisper-large-v3'.
+    
+    Returned value: an AutomaticSpeechRecognitionPipeline, to be called on mono sound with rate 16_000.
+
+    Example:
+    ```
+    import librosa
+    waveform, _ = librosa.load('tests/testdata/test_sound_ru.wav', sr=None)
+    recognizer = initialize_model_for_speech_recognition()
+    recognizer(waveform)
+    
+    >>> {'text': 'Нейронные сети — это хорошо.'}
+    ```
+    """
     if model_info is not None:
         model_name = model_info
     else:
@@ -196,7 +305,38 @@ def initialize_model_for_speech_recognition(language: str = 'ru', model_info: Op
     return recognizer
 
 
-def select_word_groups(words: List[Tuple[float, float]], segment_size: int) -> List[List[Tuple[float, float]]]:
+def select_word_groups(
+    words: List[Tuple[float, float]],
+    segment_size: float
+) -> List[List[Tuple[float, float]]]:
+    """
+    Accepts a list of consecutive segments, each segment is a tuple (start_time, end_time).
+
+    Iteratively splits the list of segments into "left" and "right" part by the largest pause between segments,
+    then splits both parts the same way, and so on. A list of segments is splitted only if its total length
+    (from the beginning of the first segment to the end of the last segment) is no shorter than `segment_size`,
+    otherwise it is not splitted.
+
+    The result is a list of groups, each group is a list of segments. The result may be an empty list,
+    oherwise each group is guaranteed to be not empty.
+
+    Example:
+    ```
+    A, B, C, D, E, F = (3, 4), (4, 9), (12, 14), (14.5, 18), (18, 20), (28, 29)
+
+    result = select_word_groups([A, B, C, D, E, F], segment_size=9)
+    assert result == [[A, B], [C, D, E], [F]]
+
+    result = select_word_groups([A, B, C, D, E, F], segment_size=0)
+    assert result == [[A], [B], [C], [D], [E], [F]]
+
+    result = select_word_groups([A], segment_size=0)
+    assert result == [[A]]
+
+    result = select_word_groups([], segment_size=0)
+    assert result == [[]]
+    ```
+    """
     if len(words) < 2:
         return [words]
     if words[-1][1] - words[0][0] < segment_size:
@@ -223,12 +363,28 @@ def select_word_groups(words: List[Tuple[float, float]], segment_size: int) -> L
     return word_groups
 
 
-def strip_segments(segments: List[Tuple[float, float]], max_sound_duration: float) -> List[Tuple[float, float]]:
+def strip_segments(
+    segments: List[Tuple[float, float]],
+    max_sound_duration: float
+) -> List[Tuple[float, float]]:
+    """
+    Clips tuples (start_time, end_time) between (0, max_sound_duration).
+    """
     return [(max(0.0, it[0]), min(it[1], max_sound_duration)) for it in segments]
 
 
-def join_short_segments_to_long_ones(segments: List[Tuple[float, float]],
-                                     min_segment_size: int) -> List[Tuple[float, float]]:
+def join_short_segments_to_long_ones(
+    segments: List[Tuple[float, float]],
+    min_segment_size: float
+) -> List[Tuple[float, float]]:
+    """
+    Iterates segments from left to right and merges two segments if two conditions are met:
+    1) The segment is shorter than `min_segment_size`
+    2) The pause between it and a neigbour segment is shorter than `min_segment_size`
+
+    If segment is short, not the first, not the last, and both pauses around it are shorter
+    than `min_segment_size`, then merges along the shorter pause.
+    """
     n_segments = len(segments)
 
     if n_segments > 1:
@@ -287,15 +443,57 @@ def join_short_segments_to_long_ones(segments: List[Tuple[float, float]],
     return new_segments
 
 
-def segmentate_sound(mono_sound: np.ndarray, segmenter: Pipeline,
-                     min_segment_size: int, max_segment_size: int,
-                     indent_for_silence: float = 0.5) -> List[Tuple[float, float]]:
+def segment_sound(
+    mono_sound: np.ndarray,
+    segmenter: Pipeline,
+    min_segment_size: float,
+    max_segment_size: float,
+    indent_for_silence: float = 0.5
+) -> List[Tuple[float, float]]:
+    """
+    Arguments:
+    - mono_sound: 1D waveform with rate 16_000 (equals wav_io.TARGET_SAMPLING_FREQUENCY),
+      possibly very long, and no shorter than asr.MIN_SOUND_LENGTH.
+    - segmenter: an AutomaticSpeechRecognitionPipeline that can process long audios and
+      returns word timestamps. See `initialize_model_for_speech_segmentation` for details.
+    - min_segment_size: see below
+    - max_segment_size: see below
+    - indent_for_silence: see below
+
+    Output: a list of tuples (start_time, end_time) for all found utterances, can be empty.
+    
+    Performs the following actions:
+    1) Obtains speech segment boundaries by applying `segmenter` to `mono_sound`.
+    2) Performs `select_word_groups` with `max_segment_size` argment and then merge each
+      group into one segment. Thus we join adjacent segments with short pauses between, but
+      do not exceed `max_segment_size` (if the initial segments do not exceed it).
+    3) Adds a padding `indent_for_silence` (in seconds) added around each obtained segment,
+      but without going beyond the input audio boundaries. Note that we just expand the borders,
+      but we do not check that padding is a silence. If the segments start to overlap after
+      adding a padding, we shift the overlapping borders so that the end of the previous sement
+      is a start of the next segment. (TODO consider that using the same silence fragment is
+      not a bad overlap, we should not fix this).
+    4) Merges segments using `join_short_segments_to_long_ones`. A segment is merged with a
+      neighbour if it is shorter than `min_segment_size` and the pause between them is also
+      shorter than `min_segment_size`.
+
+    NOTE: It is not guaranteed that all output segments are larger than `min_segment_size`,
+    if total length returned by `segmenter` (from the start of the first segment to the end of
+    the last segment), including `indent_for_silence`, is not enough.
+
+    NOTE: It is not guaranteed that all output segments are smaller than `max_segment_size`,
+    because a single segment returned by `segmenter` can exceed `max_segment_size`, especially
+    after expanding segments with `indent_for_silence`. Another reason is that 4-th step (joining
+    short segments to long ones) may produce segments that exceed `max_segment_size`. For example,
+    if A = (0, 0.75), B = (1.5, 6), they will be joined to (0, 6), exceeding `max_segment_size=5`,
+    while both segments do not.
+    """
     if not isinstance(mono_sound, np.ndarray):
         err_msg = f'The sound is wrong! Expected {type(np.array([1, 2]))}, got {type(mono_sound)}.'
         asr_logger.error(err_msg)
         raise ValueError(err_msg)
     if len(mono_sound.shape) != 1:
-        err_msg = f'The sound channel number is wrong! Expected 1, got {len(mono_sound.shape)}.'
+        err_msg = f'The sound channel number is wrong! Expected 1, got {len(mono_sound)}.'
         asr_logger.error(err_msg)
         raise ValueError(err_msg)
     if mono_sound.shape[0] <= MIN_SOUND_LENGTH:
@@ -340,6 +538,14 @@ def segmentate_sound(mono_sound: np.ndarray, segmenter: Pipeline,
 
 
 def is_speech(sound: np.ndarray, classifier: Pipeline) -> bool:
+    """
+    Checks if top class, according to the classifier, contains a word "speech".
+
+    Arguments:
+    - sound: 1D waveform with rate 16_000 (equals wav_io.TARGET_SAMPLING_FREQUENCY)
+    - classifier: an AudioClassificationPipeline that can classify audios. See
+      `initialize_model_for_speech_classification` for details.
+    """
     output = classifier(sound)
     if len(output) > 0:
         class_label = output[0]['label']
@@ -350,13 +556,23 @@ def is_speech(sound: np.ndarray, classifier: Pipeline) -> bool:
 
 
 def recognize_sounds(sounds: List[np.ndarray], recognizer: Pipeline) -> List[str]:
+    """
+    Arguments:
+    - mono_sound: a list of 1D waveforms with rate 16_000 (equals wav_io.TARGET_SAMPLING_FREQUENCY)
+    - recognizer: an AutomaticSpeechRecognitionPipeline that can return transcriptions. See
+      `initialize_model_for_speech_recognition` for details.
+
+    Sequentially applies `recognizer` to each sound, gathers a list of the resulting transcriptions
+    (a "text" field in `recognizer` output). Further, calls `remove_oscillatory_hallucinations` for
+    each transcription, and returns the list.
+    """
     for idx, val in enumerate(sounds):
         if not isinstance(val, np.ndarray):
             err_msg = f'The sound {idx} is wrong! Expected {type(np.array([1, 2]))}, got {type(val)}.'
             asr_logger.error(err_msg)
             raise ValueError(err_msg)
         if len(val.shape) != 1:
-            err_msg = f'The sound {idx} channel number is wrong! Expected 1, got {len(val.shape)}.'
+            err_msg = f'The sound {idx} channel number is wrong! Expected 1, got {len(val)}.'
             asr_logger.error(err_msg)
             raise ValueError(err_msg)
 
@@ -368,16 +584,66 @@ def recognize_sounds(sounds: List[np.ndarray], recognizer: Pipeline) -> List[str
     return [remove_oscillatory_hallucinations(it) for it in all_transcriptions]
 
 
-def transcribe(mono_sound: np.ndarray, segmenter: Pipeline, voice_activity_detector: Pipeline, asr: Pipeline,
-               min_segment_size: int, max_segment_size: int) -> List[Tuple[float, float, str]]:
-    sound_segments = segmentate_sound(mono_sound, segmenter, min_segment_size, max_segment_size)
+def transcribe(
+    mono_sound: np.ndarray,
+    segmenter: Pipeline,
+    voice_activity_detector: Pipeline,
+    asr: Pipeline,
+    min_segment_size: float,
+    max_segment_size: float
+) -> List[Tuple[float, float, str]]:
+    """
+    Transcribes a (possibly long) audio as follows:
+
+    1) Processes the whole sound with `segmenter`
+    2) Adds padding around each segment
+    3) Merges short segments into longer ones
+    4) Applies `voice_activity_detector` to filter out non-speech segments
+    5) Applies `asr` to obtain final transcriptions for each segment
+    6) Removes oscillatory hallucinations from the final transcriptions
+    7) Returns only the segments with non-empty resulting transcriptions
+
+    Arguments:
+    - mono_sound: 1D waveform with rate 16_000 (equals wav_io.TARGET_SAMPLING_FREQUENCY),
+      no shorter than asr.MIN_SOUND_LENGTH.
+    - segmenter: an AutomaticSpeechRecognitionPipeline that can process long audios and
+      returns word timestamps. See `initialize_model_for_speech_segmentation` for details.
+    - voice_activity_detector: an AudioClassificationPipeline that can classify audios. See
+      `initialize_model_for_speech_classification` for details.
+    - asr: an AutomaticSpeechRecognitionPipeline that can return transcriptions. See
+      `initialize_model_for_speech_recognition` for details.
+    - min_segment_size: a parameter for segment processing, see `segment_sound` for details.
+    - max_segment_size: a parameter for segment processing, see `segment_sound` for details.
+
+    Output: a list of tuples (start_time, end_time, transcription) for all found utterances,
+    can be empty.
+
+    Example:
+    ```
+    waveform = load_sound('tests/testdata/mono_sound.wav')
+    segmenter = initialize_model_for_speech_segmentation()
+    voice_activity_detector = initialize_model_for_speech_classification()
+    asr = initialize_model_for_speech_recognition('ru', 'openai/whisper-tiny')
+    transcribe(waveform, segmenter, vad, asr, min_segment_size=1, max_segment_size=5)
+
+    >>> [
+        (0.0, 4.18, 'Она советовала нам отнести и спасену предмету к одному почтиному мужу.'),
+        (4.18, 6.8100000000000005, 'Большому другому и вану переселший годы.'),
+        (6.8100000000000005, 11.28, 'счастливые дни, как вешные воды, промчались они.')
+    ]
+    ```
+
+    TODO when calling `voice_activity_detector` and `asr`, process all segments at once as
+    batch to improve performance, especially for long audios. However, need to calculate
+    max batch size to fit into GPU memory, or this help:
+    https://discuss.pytorch.org/t/is-it-possible-to-execute-two-modules-in-parallel-in-pytorch/54866
+    """
+    sound_segments = segment_sound(mono_sound, segmenter, min_segment_size, max_segment_size)
     asr_logger.info(f'The speech sound is divided into {len(sound_segments)} segments.')
     if len(sound_segments) == 0:
         return []
     sound_segments_ = []
-    segment_lengths = []
     for it in sound_segments:
-        segment_lengths.append(it[1] - it[0])
         segment_start = min(round(it[0] * TARGET_SAMPLING_FREQUENCY), mono_sound.shape[0])
         segment_end = min(round(it[1] * TARGET_SAMPLING_FREQUENCY), mono_sound.shape[0])
         if segment_start >= segment_end:
@@ -413,7 +679,7 @@ def transcribe(mono_sound: np.ndarray, segmenter: Pipeline, voice_activity_detec
         if is_speech(sound=mono_sound[bounds[0]:bounds[1]], classifier=voice_activity_detector):
             sounds_with_speech.append(mono_sound[bounds[0]:bounds[1]])
             segments_with_speech.append(sound_segments[idx])
-    asr_logger.info(f'{len(sounds_with_speech)} of {len(sound_segments)} segments contain a human voice.')
+    asr_logger.info(f'{len(sounds_with_speech)} of {len(sound_segments)} segments contain a human speech.')
     del sound_segments_, sound_segments
     if len(sounds_with_speech) == 0:
         return []
