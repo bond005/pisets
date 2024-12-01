@@ -251,20 +251,31 @@ class MultipleTextsAlignment:
     matches: list[WordLevelMatch]
 
     @classmethod
-    def from_strings(cls, text1: str, text2: str) -> MultipleTextsAlignment:
+    def from_strings(
+        cls,
+        text1: str | TokenizedText,
+        text2: str | TokenizedText,
+    ) -> MultipleTextsAlignment:
+        if isinstance(text1, str):
+            text1 = TokenizedText.from_text(text1)
+        if isinstance(text2, str):
+            text2 = TokenizedText.from_text(text2)
         return MultipleTextsAlignment(
-            text1=(tokenized_text_1 := TokenizedText.from_text(text1)),
-            text2=(tokenized_text_2 := TokenizedText.from_text(text2)),
+            text1=text1,
+            text2=text2,
             matches=MultipleTextsAlignment.get_matches(
-                tokenized_text_1.get_words(),
-                tokenized_text_2.get_words(),
+                text1.get_words(),
+                text2.get_words(),
             )
         )
 
-    def get_uncertainty_mask(self) -> np.ndarray:
+    def get_uncertainty_mask(self, match_indices: list[int] | None = None) -> np.ndarray:
         is_certain = np.full(len(self.text1.get_words()), False)
-        for match in self.matches:
-            is_certain[match.start1:match.end1] = match.is_equal
+        for i, match in enumerate(self.matches):
+            if match_indices is not None and i not in match_indices:
+                is_certain[match.start1:match.end1] = True
+            else:
+                is_certain[match.start1:match.end1] = match.is_equal
         return ~is_certain
 
     def wer(
@@ -329,11 +340,27 @@ class MultipleTextsAlignment:
             results['certain_n_incorrect'] = certain_n_incorrect
             results['uncertain_n_correct'] = uncertain_n_correct
             results['uncertain_n_incorrect'] = uncertain_n_incorrect
-            results['certain_correctness_ratio'] = (
+            results['certain_accuracy'] = (
                 certain_n_correct / (certain_n_correct + certain_n_incorrect)
             )
-            results['uncertain_correctness_ratio'] = (
+            results['uncertain_accuracy'] = (
                 uncertain_n_correct / (uncertain_n_correct + uncertain_n_incorrect)
+            )
+            results['precision'] = (
+                results['uncertain_n_incorrect']
+                / (results['uncertain_n_incorrect'] + results['uncertain_n_correct'])
+            )
+            results['recall'] = (
+                results['uncertain_n_incorrect']
+                / (results['uncertain_n_incorrect'] + results['certain_n_incorrect'])
+            )
+            results['uncertainty_ratio'] = uncertainty_mask.mean()
+            results['report'] = (
+                f'uncertainty_ratio {results["uncertainty_ratio"]:.3f}'
+                f', certain acc. {results["certain_accuracy"]:.3f}'
+                f', uncertain acc. {results["uncertain_accuracy"]:.3f}'
+                f', precision {results["precision"]:.3f}'
+                f', recall {results["recall"]:.3f}'
             )
 
         return results
@@ -666,7 +693,8 @@ def _should_keep(
 
 def filter_correction_suggestions(
     alignment: MultipleTextsAlignment,
-    skip_word_form_change: bool = False
+    skip_word_form_change: bool = False,
+    pbar: bool = True,
 ) -> list[int]:
     """
     Arguments:
@@ -683,7 +711,7 @@ def filter_correction_suggestions(
     NOTE: currently is adapted for Ru language
     """
     return [
-        i for i, op in enumerate(tqdm(alignment.matches, desc='Filtering suggestions'))
+        i for i, op in enumerate(tqdm(alignment.matches, desc='Filtering suggestions', disable=not pbar))
         if not op.is_equal and _should_keep(
             alignment=alignment,
             diff=op,

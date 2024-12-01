@@ -179,12 +179,12 @@ transcribers = {
         max_segment_size=30,
         asr_predictions_name='Pisets WhisperV3 (segments 10s-30s)',
     ),
-    'W2V2 golos no LM': lambda: TranscribePisets(
-        segmenter=initialize_model_for_speech_segmentation('ru', 'bond005/wav2vec2-large-ru-golos'),
-        vad='skip',
-        asr='skip',
-        segmenter_predictions_name='W2V2 Golos no LM',
-    ),
+    # 'W2V2 golos no LM': lambda: TranscribePisets(
+    #     segmenter=initialize_model_for_speech_segmentation('ru', 'bond005/wav2vec2-large-ru-golos'),
+    #     vad='skip',
+    #     asr='skip',
+    #     segmenter_predictions_name='W2V2 Golos no LM',
+    # ),
     'Pisets Podlodka': lambda: TranscribePisets(
         segmenter=initialize_model_for_speech_segmentation('ru', 'bond005/wav2vec2-large-ru-golos-with-lm'),
         vad=initialize_model_for_speech_classification(),
@@ -199,7 +199,9 @@ transcribers = {
         asr=initialize_model_for_speech_recognition('ru', 'openai/whisper-large-v3'),
         min_segment_size=1,
         max_segment_size=20,
+        stretch=(3, 4),
         asr_predictions_name='Pisets WhisperV3 no-VAD (segments 1s-20s)',
+        asr_stretched_predictions_name='Pisets WhisperV3 no-VAD stretched (segments 1s-20s)',
     ),
     'Pisets no-VAD Podlodka': lambda: TranscribePisets(
         segmenter=initialize_model_for_speech_segmentation('ru', 'bond005/wav2vec2-large-ru-golos-with-lm'),

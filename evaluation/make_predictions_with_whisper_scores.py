@@ -53,10 +53,14 @@ for sample in dataset:
 
     tokenized_text = TokenizedText.concatenate(tokenized_segments)
 
-    filepath = output_dir / f'{sample["name"]} Pisets WhisperV3 no-VAD (segments 1s-20s) with scores.json'
+    transcriber_name = 'Pisets WhisperV3 no-VAD (segments 1s-20s) with scores'
+
+    filepath = output_dir / f'{sample["name"]} {transcriber_name}.json'
 
     with open(filepath, 'w') as f:
         json.dump({
+            'audio_name': sample['name'],
+            'transcriber_name': transcriber_name,
             'tokenized_text': dataclasses.asdict(tokenized_text),
             'scores_per_word': scores_per_word,
         }, f, ensure_ascii=False)
