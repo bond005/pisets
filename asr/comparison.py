@@ -74,6 +74,23 @@ class TokenizedText:
             for t in razdel.tokenize(text)
         ]
         return TokenizedText(text=orig_text, tokens=tokens)
+    
+    @classmethod
+    def concatenate(cls, texts: list[TokenizedText], sep: str = ' ') -> TokenizedText:
+        result_text = ''
+        result_tokens = []
+        for i, tokenized_text in enumerate(texts):
+            shift = len(result_text)
+            result_text += tokenized_text.text
+            for token in tokenized_text.tokens:
+                token = copy.copy(token)
+                token.start += shift
+                token.stop += shift
+                result_tokens.append(token)
+            if i < len(texts) - 1:
+                result_text += sep
+        
+        return TokenizedText(text=result_text, tokens=result_tokens)
 
 @dataclass
 class WordLevelMatch:
@@ -227,7 +244,7 @@ class MultipleTextsAlignment:
 
     We can see a single "replace" operation from 3 words to 2 words. However, in WER metric this
     will be considered as two "replace" and one "delete" operation. To calculate WER correctly,
-    use `.wer` property.
+    use `.wer` method.
     """
     text1: TokenizedText
     text2: TokenizedText

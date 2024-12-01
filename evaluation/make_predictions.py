@@ -38,7 +38,7 @@ class TranscribeWhisperPipeline:
         )
     
     def __call__(self, waveform: np.ndarray) -> dict[str, str]:
-        return self.whisper_pipeline(waveform)['text']
+        return {self.predictions_name: self.whisper_pipeline(waveform)['text']}
 
 
 class TranscribeWhisperLongform(TranscribeWhisperPipeline):
@@ -74,7 +74,8 @@ class TranscribeWhisperLongform(TranscribeWhisperPipeline):
             language='<|ru|>',
             task='transcribe',
         )
-        return self.whisper_processor.batch_decode(result, skip_special_tokens=True)[0]
+        text = self.whisper_processor.batch_decode(result, skip_special_tokens=True)[0]
+        return {self.predictions_name: text}
 
 
 @dataclass
@@ -115,7 +116,7 @@ class TranscribePisets:
             asr=(
                 self.asr
                 if self.asr != 'skip'
-                else (lambda audio: {'text': ''})
+                else (lambda audio: {'text': 'none'})
             ),
             min_segment_size=self.min_segment_size,
             max_segment_size=self.max_segment_size,
@@ -130,7 +131,21 @@ class TranscribePisets:
         if self.asr_stretched_predictions_name is not None:
             results[self.asr_stretched_predictions_name] = ' '.join([s.transcription_stretched for s in outputs])
         return results
+
+
+@dataclass
+class TranscribeNoisy:
+    """
+    Transcribe with a specified signal-to-noise ratio
+    """
+    snr: float
+    transcriber: Callable
+
+    def __call__(self, waveform: np.ndarray) -> dict[str, str]:
+        # TODO augment
+        return self.transcriber(waveform)
     
+
 # defining transcribers without instantiating them all at once to save GPU memory
 
 transcribers = {
@@ -195,6 +210,28 @@ transcribers = {
         asr_predictions_name='Pisets WhisperV3 no-VAD Podlodka (segments 1s-20s)',
     ),
 }
+
+# for snr in [1, 2, 3, 4, 5]:
+#     transcribers[f'Whisper longform SNR={snr}'] = lambda: TranscribeNoisy(
+#         snr=snr,
+#         transcriber=TranscribeWhisperLongform(
+#             predictions_name=f'Baseline Whisper longform SNR={snr}',
+#             condition_on_prev_tokens=False,
+#         ),
+#     )
+#     transcribers[f'Pisets (segments 1s-20s) SNR={snr}'] = lambda: TranscribeNoisy(
+#         snr=snr,
+#         transcriber=TranscribePisets(
+#             segmenter=initialize_model_for_speech_segmentation('ru', 'bond005/wav2vec2-large-ru-golos-with-lm'),
+#             vad=initialize_model_for_speech_classification(),
+#             asr=initialize_model_for_speech_recognition('ru', 'openai/whisper-large-v3'),
+#             min_segment_size=1,
+#             max_segment_size=20,
+#             segmenter_predictions_name=f'W2V2 Golos LM SNR={snr}',
+#             asr_predictions_name=f'Pisets WhisperV3 (segments 1s-20s) SNR={snr}',
+#         ),
+#     )
+
 
 dataset = (
     load_dataset('dangrebenkin/long_audio_youtube_lectures')
