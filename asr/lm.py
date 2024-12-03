@@ -64,7 +64,6 @@ def get_all_subsets(elements: list[Any]):
         for r in range(len(elements) + 1)
     ), [])
 
-scorer = SequenceScore('ai-forever/rugpt3large_based_on_gpt2')
 
 def accept_suggestions_by_lm(
     base_vs_additional: MultipleTextsAlignment,

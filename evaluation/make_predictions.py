@@ -67,7 +67,9 @@ class TranscribeWhisperLongform(TranscribeWhisperPipeline):
         result = self.whisper_pipeline.model.generate(
             **inputs.to('cuda'),
             condition_on_prev_tokens=self.condition_on_prev_tokens,
-            temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0),
+            # temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0),
+            temperature=0, # for determinism
+            do_sample=False,  # for determinism
             logprob_threshold=-1.0,
             compression_ratio_threshold=1.35,
             return_timestamps=True,
