@@ -1,4 +1,5 @@
 import copy
+from dataclasses import dataclass
 import gc
 import logging
 from typing import List, Optional, Tuple, Union
@@ -8,6 +9,7 @@ import numpy as np
 from tqdm import tqdm
 import torch
 from transformers import pipeline, Pipeline
+from scipy.signal import resample_poly
 
 from utils.utils import time_to_str
 from wav_io.wav_io import TARGET_SAMPLING_FREQUENCY
@@ -164,8 +166,7 @@ def initialize_model_for_speech_segmentation(language: str = 'ru', model_info: O
         - for language='en': 'jonatasgrosman/wav2vec2-large-xlsr-53-english'.
     
     Returned value: an AutomaticSpeechRecognitionPipeline, to be called on mono sound with rate 16_000
-    and argument `return_timestamps='word'`. In Pisets, only the output timestamps are used, not the
-    transcribed speech.
+    and argument `return_timestamps='word'`.
 
     NOTE: the pipeline should have the ability to process long audios. To achieve this, the method calls
     the `transformers.pipeline` factory with arguments `chunk_length_s=10, stride_length_s=(4, 2)`.
@@ -288,11 +289,27 @@ def initialize_model_for_speech_recognition(language: str = 'ru', model_info: Op
         else:
             model_name = 'openai/whisper-large-v3'
     try:
+        pipeline_kwargs = {}
+        if 'whisper' in model_name.lower():
+            if language == 'ru':
+                pipeline_kwargs['generate_kwargs'] = {
+                    'language': '<|ru|>',
+                    'task': 'transcribe',
+                    'forced_decoder_ids': None
+                }
+            elif language == 'en':
+                pipeline_kwargs['generate_kwargs'] = {
+                    'language': '<|en|>',
+                    'task': 'transcribe',
+                    'forced_decoder_ids': None
+                }
+        
         if torch.cuda.is_available():
             recognizer = pipeline(
                 'automatic-speech-recognition', model=model_name,
                 chunk_length_s=20, stride_length_s=(4, 2),
-                device='cuda:0', model_kwargs={'attn_implementation': 'sdpa'}, torch_dtype=torch.float16
+                device='cuda:0', model_kwargs={'attn_implementation': 'sdpa'}, torch_dtype=torch.float16,
+                **pipeline_kwargs
             )
         else:
             recognizer = pipeline(
@@ -306,11 +323,11 @@ def initialize_model_for_speech_recognition(language: str = 'ru', model_info: Op
 
 
 def select_word_groups(
-    words: List[Tuple[float, float]],
+    words: List[Tuple[float, float, str]],
     segment_size: float
-) -> List[List[Tuple[float, float]]]:
+) -> List[List[Tuple[float, float, str]]]:
     """
-    Accepts a list of consecutive segments, each segment is a tuple (start_time, end_time).
+    Accepts a list of consecutive segments, each segment is a tuple (start_time, end_time, transcription).
 
     Iteratively splits the list of segments into "left" and "right" part by the largest pause between segments,
     then splits both parts the same way, and so on. A list of segments is splitted only if its total length
@@ -322,7 +339,7 @@ def select_word_groups(
 
     Example:
     ```
-    A, B, C, D, E, F = (3, 4), (4, 9), (12, 14), (14.5, 18), (18, 20), (28, 29)
+    A, B, C, D, E, F = (3, 4, ''), (4, 9, ''), (12, 14, ''), (14.5, 18, ''), (18, 20, ''), (28, 29, '')
 
     result = select_word_groups([A, B, C, D, E, F], segment_size=9)
     assert result == [[A, B], [C, D, E], [F]]
@@ -364,19 +381,22 @@ def select_word_groups(
 
 
 def strip_segments(
-    segments: List[Tuple[float, float]],
+    segments: List[Tuple[float, float, str]],
     max_sound_duration: float
 ) -> List[Tuple[float, float]]:
     """
-    Clips tuples (start_time, end_time) between (0, max_sound_duration).
+    Clips tuples (start_time, end_time, transcription) between (0, max_sound_duration).
     """
-    return [(max(0.0, it[0]), min(it[1], max_sound_duration)) for it in segments]
+    return [
+        (max(0.0, start), min(end, max_sound_duration), transcription)
+        for start, end, transcription in segments
+    ]
 
 
 def join_short_segments_to_long_ones(
-    segments: List[Tuple[float, float]],
+    segments: List[Tuple[float, float, str]],
     min_segment_size: float
-) -> List[Tuple[float, float]]:
+) -> List[Tuple[float, float, str]]:
     """
     Iterates segments from left to right and merges two segments if two conditions are met:
     1) The segment is shorter than `min_segment_size`
@@ -392,7 +412,7 @@ def join_short_segments_to_long_ones(
 
         segment_idx = 0
         while segment_idx < len(new_segments):
-            segment_start, segment_end = new_segments[segment_idx]
+            segment_start, segment_end, text = new_segments[segment_idx]
             if (segment_end - segment_start) < min_segment_size:
                 if (segment_idx > 0) and (segment_idx < len(new_segments) - 1):
                     distance_to_left = segment_start - new_segments[segment_idx - 1][1]
@@ -401,7 +421,8 @@ def join_short_segments_to_long_ones(
                         if distance_to_left < min_segment_size:
                             new_segments[segment_idx - 1] = (
                                 new_segments[segment_idx - 1][0],
-                                segment_end
+                                segment_end,
+                                new_segments[segment_idx - 1][2] + ' ' + text
                             )
                             _ = new_segments.pop(segment_idx)
                         else:
@@ -410,7 +431,8 @@ def join_short_segments_to_long_ones(
                         if distance_to_right < min_segment_size:
                             new_segments[segment_idx + 1] = (
                                 segment_start,
-                                new_segments[segment_idx + 1][1]
+                                new_segments[segment_idx + 1][1],
+                                text + ' ' + new_segments[segment_idx + 1][2]
                             )
                             _ = new_segments.pop(segment_idx)
                         else:
@@ -420,7 +442,8 @@ def join_short_segments_to_long_ones(
                     if distance_to_left < min_segment_size:
                         new_segments[segment_idx - 1] = (
                             new_segments[segment_idx - 1][0],
-                            segment_end
+                            segment_end,
+                            new_segments[segment_idx - 1][2] + ' ' + text
                         )
                         _ = new_segments.pop(segment_idx)
                     else:
@@ -430,7 +453,8 @@ def join_short_segments_to_long_ones(
                     if distance_to_right < min_segment_size:
                         new_segments[segment_idx + 1] = (
                             segment_start,
-                            new_segments[segment_idx + 1][1]
+                            new_segments[segment_idx + 1][1],
+                            text + ' ' + new_segments[segment_idx + 1][2]
                         )
                         _ = new_segments.pop(segment_idx)
                     else:
@@ -449,18 +473,18 @@ def segment_sound(
     min_segment_size: float,
     max_segment_size: float,
     indent_for_silence: float = 0.5
-) -> List[Tuple[float, float]]:
+) -> List[Tuple[float, float, str]]:
     """
     Arguments:
     - mono_sound: 1D waveform with rate 16_000 (equals wav_io.TARGET_SAMPLING_FREQUENCY),
       possibly very long, and no shorter than asr.MIN_SOUND_LENGTH.
     - segmenter: an AutomaticSpeechRecognitionPipeline that can process long audios and
-      returns word timestamps. See `initialize_model_for_speech_segmentation` for details.
+      returns transcriptions and word timestamps. See `initialize_model_for_speech_segmentation` for details.
     - min_segment_size: see below
     - max_segment_size: see below
     - indent_for_silence: see below
 
-    Output: a list of tuples (start_time, end_time) for all found utterances, can be empty.
+    Output: a list of tuples (start_time, end_time, transcription) for all found utterances, can be empty.
     
     Performs the following actions:
     1) Obtains speech segment boundaries by applying `segmenter` to `mono_sound`.
@@ -506,23 +530,39 @@ def segment_sound(
     gc.collect()
     torch.cuda.empty_cache()
 
-    word_bounds = [(float(it['timestamp'][0]), float(it['timestamp'][1])) for it in output['chunks']]
+    word_bounds = [
+        (
+            float(it['timestamp'][0]),
+            float(it['timestamp'][1]),
+            str(it['text'])
+        )
+        for it in output['chunks']
+    ]
     if len(word_bounds) < 1:
         return []
     if len(word_bounds) == 1:
         segment_start = word_bounds[0][0] - indent_for_silence
         segment_end = word_bounds[0][1] + indent_for_silence
-        return strip_segments([(segment_start, segment_end)],
+        full_transcription = word_bounds[0][2]
+        return strip_segments([(segment_start, segment_end, full_transcription)],
                               mono_sound.shape[0] / TARGET_SAMPLING_FREQUENCY)
     if (word_bounds[-1][1] - word_bounds[0][0]) <= max_segment_size:
         segment_start = word_bounds[0][0] - indent_for_silence
         segment_end = word_bounds[-1][1] + indent_for_silence
-        return strip_segments([(segment_start, segment_end)],
+        full_transcription = ' '.join(text for _, _, text in word_bounds)
+        return strip_segments([(segment_start, segment_end, full_transcription)],
                               mono_sound.shape[0] / TARGET_SAMPLING_FREQUENCY)
     word_groups = select_word_groups(word_bounds, max_segment_size)
 
     segments = strip_segments(
-        [(cur_group[0][0] - indent_for_silence, cur_group[-1][1] + indent_for_silence) for cur_group in word_groups],
+        [
+            (
+                cur_group[0][0] - indent_for_silence,
+                cur_group[-1][1] + indent_for_silence,
+                ' '.join(text for _, _, text in cur_group)
+            )
+            for cur_group in word_groups
+        ],
         mono_sound.shape[0] / TARGET_SAMPLING_FREQUENCY
     )
     n_segments = len(segments)
@@ -531,8 +571,8 @@ def segment_sound(
         for idx in range(1, n_segments):
             if segments[idx - 1][1] > segments[idx][0]:
                 overlap = segments[idx - 1][1] - segments[idx][0]
-                segments[idx - 1] = (segments[idx - 1][0], segments[idx - 1][1] - overlap / 2.0)
-                segments[idx] = (segments[idx][0] + overlap / 2.0, segments[idx][1])
+                segments[idx - 1] = (segments[idx - 1][0], segments[idx - 1][1] - overlap / 2.0, segments[idx - 1][2])
+                segments[idx] = (segments[idx][0] + overlap / 2.0, segments[idx][1], segments[idx][2])
 
     return join_short_segments_to_long_ones(segments, min_segment_size)
 
@@ -555,7 +595,7 @@ def is_speech(sound: np.ndarray, classifier: Pipeline) -> bool:
     return contains_speech
 
 
-def recognize_sounds(sounds: List[np.ndarray], recognizer: Pipeline) -> List[str]:
+def recognize_sounds(sounds: List[np.ndarray], recognizer: Pipeline, stretch: tuple[int, int] | None = None) -> List[str]:
     """
     Arguments:
     - mono_sound: a list of 1D waveforms with rate 16_000 (equals wav_io.TARGET_SAMPLING_FREQUENCY)
@@ -583,6 +623,16 @@ def recognize_sounds(sounds: List[np.ndarray], recognizer: Pipeline) -> List[str
         torch.cuda.empty_cache()
     return [remove_oscillatory_hallucinations(it) for it in all_transcriptions]
 
+@dataclass
+class TranscribedSegment:
+    """
+    A transcribed segment. See `.transcribe()` function for details.
+    """
+    start: float
+    end: float
+    transcription: str
+    transcription_from_segmenter: str | None = None
+    transcription_stretched: str | None = None
 
 def transcribe(
     mono_sound: np.ndarray,
@@ -590,8 +640,9 @@ def transcribe(
     voice_activity_detector: Pipeline,
     asr: Pipeline,
     min_segment_size: float,
-    max_segment_size: float
-) -> List[Tuple[float, float, str]]:
+    max_segment_size: float,
+    stretch: tuple[int, int] | None = None,
+) -> List[TranscribedSegment]:
     """
     Transcribes a (possibly long) audio as follows:
 
@@ -607,30 +658,71 @@ def transcribe(
     - mono_sound: 1D waveform with rate 16_000 (equals wav_io.TARGET_SAMPLING_FREQUENCY),
       no shorter than asr.MIN_SOUND_LENGTH.
     - segmenter: an AutomaticSpeechRecognitionPipeline that can process long audios and
-      returns word timestamps. See `initialize_model_for_speech_segmentation` for details.
+      returns transcriptions and word timestamps. See `initialize_model_for_speech_segmentation` for details.
     - voice_activity_detector: an AudioClassificationPipeline that can classify audios. See
       `initialize_model_for_speech_classification` for details.
     - asr: an AutomaticSpeechRecognitionPipeline that can return transcriptions. See
       `initialize_model_for_speech_recognition` for details.
     - min_segment_size: a parameter for segment processing, see `segment_sound` for details.
     - max_segment_size: a parameter for segment processing, see `segment_sound` for details.
+    - stretch: if specified, stretches each segment in `stretch[1]/stretch[0]` times and perform an
+      additional speech recognition with `asr` pipeline. The results are returned in
+      `.transcription_stretched` field of `TranscribedSegment`.
 
-    Output: a list of tuples (start_time, end_time, transcription) for all found utterances,
-    can be empty.
+    Output: a list of `TranscribedSegment` for all found utterances, can be empty:
+    - `.transcription`: a transcription from `asr` Pipeline.
+    - `.transcription_from_segmenter`: a transcription from `segmenter` Pipeline.
+    - `.transcription_stretched`: a transcription of stretched segment from `asr` Pipeline
+      (if `stretch` agument is provided)
 
     Example:
     ```
+    from wav_io.wav_io import load_sound
+    from asr.asr import *
+
     waveform = load_sound('tests/testdata/mono_sound.wav')
     segmenter = initialize_model_for_speech_segmentation()
-    voice_activity_detector = initialize_model_for_speech_classification()
-    asr = initialize_model_for_speech_recognition('ru', 'openai/whisper-tiny')
-    transcribe(waveform, segmenter, vad, asr, min_segment_size=1, max_segment_size=5)
+    vad = initialize_model_for_speech_classification()
+    asr = initialize_model_for_speech_recognition('ru', 'openai/whisper-large-v3')
+    results = transcribe(waveform, segmenter, vad, asr, min_segment_size=1, max_segment_size=5, stretch=(3, 4))
+    print(results)
 
     >>> [
-        (0.0, 4.18, 'Она советовала нам отнести и спасену предмету к одному почтиному мужу.'),
-        (4.18, 6.8100000000000005, 'Большому другому и вану переселший годы.'),
-        (6.8100000000000005, 11.28, 'счастливые дни, как вешные воды, промчались они.')
+        TranscribedSegment(
+            start=0.0,
+            end=4.18,
+            transcription='она советовала нам отнестись посему предмету к одному почтенному мужу',
+            transcription_from_segmenter='Она советовала нам отнестись по всему предмету к одному почтенному мужу.',
+            transcription_stretched='Она советовала нам отнестись по всему предмету к одному почтенному мужу.'
+        ),
+        TranscribedSegment(
+            start=4.18,
+            end=6.8100000000000005,
+            transcription='бывшему другам ивану переселые годы',
+            transcription_from_segmenter='бывшему другом Ивану Петровичу.',
+            transcription_stretched='Бывшему другом Ивану Петровичу.'
+        ),
+        TranscribedSegment(
+            start=6.8100000000000005,
+            end=11.28,
+            transcription='счастливые дни как вешние воды промчались они',
+            transcription_from_segmenter='Счастливые дни, как вешние воды, промчались они.',
+            transcription_stretched='Счастливые дни, как вешние воды, промчались они.'
+        )
     ]
+
+    from asr.comparison import MultipleTextsAlignment, visualize_correction_suggestions
+
+    for result in results:
+        suggestions = MultipleTextsAlignment.from_strings(
+            result.transcription,
+            result.transcription_stretched
+        ).get_correction_suggestions()
+        print(visualize_correction_suggestions(result.transcription, suggestions))
+
+    >>> она советовала нам отнестись {посему|по всему} предмету к одному почтенному мужу
+    бывшему {другам|другом} ивану {переселые годы|Петровичу}
+    счастливые дни как вешние воды промчались они
     ```
 
     TODO when calling `voice_activity_detector` and `asr`, process all segments at once as
@@ -685,14 +777,22 @@ def transcribe(
         return []
     recognized_transcriptions = recognize_sounds(
         sounds=sounds_with_speech,
-        recognizer=asr
+        recognizer=asr,
     )
-    del sounds_with_speech
-    results = list(filter(
-        lambda it2: len(it2[2]) > 0,
-        map(
-            lambda it: (it[0][0], it[0][1], it[1].strip()),
-            zip(segments_with_speech, recognized_transcriptions)
+    results = [
+        TranscribedSegment(start, end, transcription.strip(), transcription_from_segmenter.strip())
+        for (start, end, transcription_from_segmenter), transcription
+        in zip(segments_with_speech, recognized_transcriptions)
+        if len(transcription.strip()) > 0
+    ]
+    if stretch is not None:
+        transcriptions_stretched = recognize_sounds(
+            sounds=[
+                resample_poly(sound, up=stretch[0], down=stretch[1])
+                for sound in sounds_with_speech
+            ],
+            recognizer=asr,
         )
-    ))
+        for result, t in zip(results, transcriptions_stretched):
+            result.transcription_stretched = t
     return results
