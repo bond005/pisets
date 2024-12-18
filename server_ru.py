@@ -1,21 +1,20 @@
+import asyncio
 import logging
 import os
 import tempfile
-
-from flask import Flask, request, jsonify, send_file
-import numpy as np
 import uuid
-import asyncio
 
-from wav_io.wav_io import transform_to_wavpcm, load_sound
-from wav_io.wav_io import TARGET_SAMPLING_FREQUENCY
-from asr.asr import initialize_model_for_speech_recognition
+import numpy as np
+from docx import Document
+from flask import Flask, request, jsonify, send_file
+
 from asr.asr import initialize_model_for_speech_classification
+from asr.asr import initialize_model_for_speech_recognition
 from asr.asr import initialize_model_for_speech_segmentation
 from asr.asr import transcribe as transcribe_speech
 from utils.utils import time_to_str
-
-from docx import Document
+from wav_io.wav_io import TARGET_SAMPLING_FREQUENCY
+from wav_io.wav_io import transform_to_wavpcm, load_sound
 
 speech_to_srt_logger = logging.getLogger(__name__)
 logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s',
@@ -61,6 +60,11 @@ def ready():
     return 'OK'
 
 
+@app.route('/statuses', methods=['GET'])
+async def statuses():
+    return jsonify(task_status)
+
+
 @app.route('/transcribe', methods=['POST'])
 async def transcribe():
     task_id = str(uuid.uuid4())
@@ -74,9 +78,12 @@ async def transcribe():
     file = request.files['audio']
     if file.filename == '':
         speech_to_srt_logger.error('400: No audio file provided for upload')
-        task_status[task_id] = jsonify(
-            {"status": "Error", "status_code": 400, "message": "No audio file provided for upload"})
-        return task_status[task_id]
+        task_status[task_id] = {
+            "status": "Error",
+            "status_code": 400,
+            "message": "No audio file provided for upload"
+        }
+        return jsonify(task_status[task_id])
 
     point_pos = file.filename.rfind('.')
     if point_pos > 0:
@@ -85,9 +92,11 @@ async def transcribe():
         src_file_ext = ''
     if len(src_file_ext) == 0:
         speech_to_srt_logger.error('400: Unknown type of the file provided for upload')
-        task_status[task_id] = jsonify(
-            {"status": "Error", "status_code": 400, "message": "Unknown type of the file provided for upload"})
-        return task_status[task_id]
+        task_status[task_id] = {
+            "status": "Error",
+            "status_code": 400,
+            "message": "Unknown type of the file provided for upload"}
+        return jsonify(task_status[task_id])
     tmp_audio_name = ''
     tmp_wav_name = ''
     err_msg = ''
@@ -141,12 +150,12 @@ async def transcribe():
         speech_to_srt_logger.info(f'The sound "{file.filename}" is empty.')
     else:
         speech_to_srt_logger.error(task_id)
-        await asyncio.create_task(create_result_file(input_sound, segmenter, vad, asr, task_id))
+        await asyncio.create_task(create_result_file(input_sound, segmenter, vad, asr, task_id, filename=file.filename))
 
     return jsonify({'task_id': task_id})
 
 
-async def create_result_file(input_sound, segmenter, vad, asr, task_id):
+async def create_result_file(input_sound, segmenter, vad, asr, task_id, filename=None):
     texts_with_timestamps = transcribe_speech(input_sound, segmenter, vad, asr, MIN_FRAME_SIZE, MAX_FRAME_SIZE)
     output_filename = task_id + '.docx'
     doc = Document()
@@ -158,7 +167,12 @@ async def create_result_file(input_sound, segmenter, vad, asr, task_id):
     result_path = os.path.join(RESULTS_FOLDER, output_filename)
     doc.save(result_path)
 
-    task_status[task_id] = jsonify({'status': 'Ready', 'status_code': 200, 'result_path': result_path})
+    task_status[task_id] = {
+        'status': 'Ready',
+        'status_code': 200,
+        'result_path': result_path,
+        'source_filename': filename
+    }
 
 
 @app.route('/status/<task_id>', methods=['GET'])
@@ -166,7 +180,7 @@ def get_status(task_id):
     status = task_status.get(task_id, None)
     if status is None:
         return jsonify({'error': 'Task not found'}), 404
-    return status
+    return jsonify(status)
 
 
 @app.route('/download_result/<task_id>', methods=['GET'])
@@ -179,4 +193,6 @@ def download_result(task_id):
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8040)
+    host = os.getenv("PISETS_API_HOST", "0.0.0.0")
+    port = int(os.getenv("PISETS_API_PORT", "80"))
+    app.run(host=host, port=port)
