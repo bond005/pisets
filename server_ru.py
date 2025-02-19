@@ -177,6 +177,22 @@ def download_result(task_id):
 
     return send_file(result_file, as_attachment=True)
 
+# Added OpenAI transcriptions compatability
+@app.route('/v1/audio/transcriptions', methods=['POST'])
+async def transcribe_audio():
+    file = request.files['file']
+    suffix = "."+file.filename.rsplit('.', 1)[-1].lower()
+    with tempfile.NamedTemporaryFile(mode='wb', delete=True, suffix=suffix) as fp:
+        file.save(fp.name)
+        with tempfile.NamedTemporaryFile(mode='wb', delete=True, suffix='.wav') as wav_fp:
+            wav_filename = wav_fp.name
+            transform_to_wavpcm(fp.name, wav_filename)
+            sound = load_sound(wav_filename)
+
+    texts_with_timestamps = transcribe_speech(sound, segmenter, vad, asr, MIN_FRAME_SIZE, MAX_FRAME_SIZE)
+    return jsonify({"text":"\n".join([str(line) for line in texts_with_timestamps])})
+
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8040)
